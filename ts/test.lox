@@ -1,0 +1,37 @@
+fun new_line() {
+    print "
+";
+}
+
+fun input(prompt) {
+    print prompt;
+    return read_line();
+}
+
+fun input_num(prompt) {
+    var num = parse_num(input(prompt));
+    if (num == nil) {
+        print "Invalid input";
+        return nil;
+    } else {
+        return num;
+    }
+}
+
+fun fact(n) {
+    var start = clock();
+    var a = 0;
+    var b = 1;
+    var temp = 0;
+    while (n != 0) {
+        temp = a;
+        a = b;
+        b = temp + b;
+        n = n - 1;
+    }
+    var elapsed = clock() - start;
+    print elapsed; new_line();
+    return a;
+}
+
+print(fact(input_num(""))); new_line();
