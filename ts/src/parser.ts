@@ -1,8 +1,8 @@
 import { Token } from "./token";
-import { Assign, Binary, Call, Comma, Expr, Grouping, Literal, Logical, Ternary, Unary, Variable } from "./Expr.js";
+import { Assign, Binary, Call, Comma, Expr, Get, Grouping, Literal, Logical, Ternary, Unary, Variable, Set as SetExp, This, Super } from "./Expr.js";
 import { TokenType } from "./token_type.js";
 import { error } from "./main.js";
-import { Print, Stmt, Expression, Var, Block, If, While, Break, Continue, Func, Return } from "./Stmt.js";
+import { Print, Stmt, Expression, Var, Block, If, While, Break, Continue, Func, Return, Class } from "./Stmt.js";
 
 class ParseError extends Error { }
 
@@ -59,6 +59,7 @@ export class Parser {
 
     declaration(): Stmt | null {
         try {
+            if (this.match([TokenType.CLASS])) return this.classDeclaration();
             if (this.match([TokenType.FUN])) return this.func("function");
             if (this.match([TokenType.VAR])) return this.varDeclaration();
             return this.statement();
@@ -68,7 +69,28 @@ export class Parser {
         }
     }
 
-    func(kind: string): Stmt {
+    classDeclaration(): Stmt {
+        const name = this.consume(TokenType.IDENTIFIER, "Expect class name.");
+
+        let superclass = null;
+        if (this.match([TokenType.LESS])) {
+            this.consume(TokenType.IDENTIFIER, "Expect superclass name.");
+            superclass = new Variable(this.previous());
+        }
+
+        this.consume(TokenType.LEFT_BRACE, "Expect '{' before class body.");
+
+        const methods: Func[] = [];
+        while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+            methods.push(this.func("method"));
+        }
+
+        this.consume(TokenType.RIGHT_BRACE, "Expect '}' after class body.");
+
+        return new Class(name, superclass, methods);
+    }
+
+    func(kind: string): Func {
         const name = this.consume(TokenType.IDENTIFIER, "Expect " + kind + " name.");
         this.consume(TokenType.LEFT_PAREN, "Expect '(' after " + kind + " name.");
         const params: Token[] = [];
@@ -250,6 +272,9 @@ export class Parser {
 
             if (expr instanceof Variable) {
                 return new Assign(expr.name, value);
+            } else if (expr instanceof Get) {
+                const get = expr;
+                return new SetExp(get.object, get.name, value);
             }
 
             this.error(equals, "Invalid assignment target.");
@@ -356,6 +381,15 @@ export class Parser {
             return new Literal(this.previous().literal);
         }
 
+        if (this.match([TokenType.SUPER])) {
+            const keyword = this.previous();
+            this.consume(TokenType.DOT, "Expect '.' after 'super'.");
+            const method = this.consume(TokenType.IDENTIFIER, "Expect superclass method name.");
+            return new Super(keyword, method);
+        }
+
+        if (this.match([TokenType.THIS])) return new This(this.previous());
+
         if (this.match([TokenType.IDENTIFIER])) {
             return new Variable(this.previous());
         }
@@ -401,6 +435,9 @@ export class Parser {
         while (true) {
             if (this.match([TokenType.LEFT_PAREN])) {
                 expr = this.finishCall(expr);
+            } else if (this.match([TokenType.DOT])) {
+                const name = this.consume(TokenType.IDENTIFIER, "Expect property name after '.'.");
+                expr = new Get(expr, name);
             } else {
                 break;
             }

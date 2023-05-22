@@ -1,4 +1,4 @@
-import { Expr } from "./Expr.js";
+import { Expr, Variable } from "./Expr.js";
 import { Token } from "./token.js";
 
 export type Value = string | number | boolean | Object | null;
@@ -9,6 +9,7 @@ export interface Stmt {
 
 export interface Visitor<T> {
     visitBlockStmt: (stmt: Block) => T,
+    visitClassStmt: (stmt: Class) => T,
     visitExpressionStmt: (stmt: Expression) => T,
     visitFuncStmt: (stmt: Func) => T,
     visitIfStmt: (stmt: If) => T,
@@ -29,6 +30,22 @@ export class Block implements Stmt {
 
     constructor(statements: Stmt[]) {
         this.statements = statements;
+    }
+}
+
+export class Class implements Stmt {
+    name: Token;
+    superclass: Variable | null;
+    methods: Func[];
+
+    accept<T>(visitor: Visitor<T>): T {
+        return visitor.visitClassStmt(this);
+    }
+
+    constructor(name: Token, superclass: Variable | null, methods: Func[]) {
+        this.name = name;
+        this.superclass = superclass;
+        this.methods = methods;
     }
 }
 

@@ -1,5 +1,5 @@
-import { Visitor as ExprVisitor, Expr, Literal, Value, Grouping, Unary, Binary, Comma, Ternary, Variable, Assign, Logical, Call } from "./Expr.js";
-import { Block, Expression, Func, If, Print, Return, Stmt, Var, Visitor as StmtVisitor, While } from "./Stmt.js";
+import { Visitor as ExprVisitor, Expr, Literal, Value, Grouping, Unary, Binary, Comma, Ternary, Variable, Assign, Logical, Call, Get, Set as SetExpr, This, Super } from "./Expr.js";
+import { Block, Class, Expression, Func, If, Print, Return, Stmt, Var, Visitor as StmtVisitor, While } from "./Stmt.js";
 import { Token } from "./token.js";
 import { TokenType } from "./token_type.js";
 import { RuntimeError } from "./runtime_error.js";
@@ -9,6 +9,8 @@ import { isCallable, LoxCallable } from "./lox_callable.js";
 import { LoxFunction } from "./lox_function.js";
 import { ReturnException } from "./return.js";
 import { printSync, readLine } from "./utils.js";
+import { LoxInstance } from "./lox_instance.js";
+import { LoxClass } from "./lox_class.js";
 
 class BreakException { }
 class ContinueException { }
@@ -102,6 +104,36 @@ export class Interpreter implements ExprVisitor<Value>, StmtVisitor<void> {
         return this.evaluate(expr.right);
     }
 
+    visitSetExpr(expr: SetExpr): Value {
+        const object = this.evaluate(expr.object);
+
+        if (!(object instanceof LoxInstance)) {
+            throw new RuntimeError(expr.name, "Only instances have fields.");
+        }
+
+        const value = this.evaluate(expr.value);
+        object.set(expr.name, value);
+        return value;
+    }
+
+    visitSuperExpr(expr: Super): Value {
+        const distance = this.locals.get(expr) as number;
+        const superclass = this.environment.getAt(distance, "super") as LoxClass;
+        const object = this.environment.getAt(distance - 1, "this") as LoxInstance;
+
+        const method = superclass.findMethod(expr.method.lexeme) as LoxFunction;
+
+        if (method === null) {
+            throw new RuntimeError(expr.method, "Undefined property '" + expr.method.lexeme + "'.");
+        }
+
+        return method.bind(object);
+    }
+
+    visitThisExpr(expr: This): Value {
+        return this.lookUpVariable(expr.keyword, expr);
+    }
+
     visitGroupingExpr(expr: Grouping): Value {
         return this.evaluate(expr.expression);
     }
@@ -160,6 +192,38 @@ export class Interpreter implements ExprVisitor<Value>, StmtVisitor<void> {
         return last_result;
     }
 
+    visitClassStmt(stmt: Class): Value {
+        let superclass = null;
+        if (stmt.superclass !== null) {
+            superclass = this.evaluate(stmt.superclass);
+            if (!(superclass instanceof LoxClass)) {
+                throw new RuntimeError(stmt.superclass.name, "Superclass must be a class.");
+            }
+        }
+
+        this.environment.define(stmt.name.lexeme, null);
+
+        if (stmt.superclass !== null) {
+            this.environment = new Environment(this.environment);
+            this.environment.define("super", superclass);
+        }
+
+        const methods = new Map<string, LoxFunction>();
+        for (const method of stmt.methods) {
+            const func = new LoxFunction(method, this.environment, method.name.lexeme === "init");
+            methods.set(method.name.lexeme, func);
+        }
+
+        const klass = new LoxClass(stmt.name.lexeme, superclass, methods);
+
+        if (superclass !== null) {
+            this.environment = this.environment.enclosing as Environment;
+        }
+
+        this.environment.assign(stmt.name, klass);
+        return null;
+    }
+
     visitBlockStmt(stmt: Block): Value | undefined {
         return this.executeBlock(stmt.statements, new Environment(this.environment));
     }
@@ -169,7 +233,7 @@ export class Interpreter implements ExprVisitor<Value>, StmtVisitor<void> {
     }
 
     visitFuncStmt(stmt: Func): Value | undefined {
-        const func = new LoxFunction(stmt, this.environment);
+        const func = new LoxFunction(stmt, this.environment, false);
         this.environment.define(stmt.name.lexeme, func);
         return undefined;
     }
@@ -333,6 +397,15 @@ export class Interpreter implements ExprVisitor<Value>, StmtVisitor<void> {
         }
 
         return func.call(this, args);
+    }
+
+    visitGetExpr(expr: Get): Value {
+        const object = this.evaluate(expr.object);
+        if (object instanceof LoxInstance) {
+            return object.get(expr.name);
+        }
+
+        throw new RuntimeError(expr.name, "Only instances have properties.");
     }
 
     interpret(statements: Stmt[]): Value | undefined {

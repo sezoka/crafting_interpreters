@@ -10,9 +10,13 @@ export interface Visitor<T> {
     visitAssignExpr: (expr: Assign) => T,
     visitBinaryExpr: (expr: Binary) => T,
     visitCallExpr: (expr: Call) => T,
+    visitGetExpr: (expr: Get) => T,
     visitGroupingExpr: (expr: Grouping) => T,
     visitLiteralExpr: (expr: Literal) => T,
     visitLogicalExpr: (expr: Logical) => T,
+    visitSetExpr: (expr: Set) => T,
+    visitSuperExpr: (expr: Super) => T,
+    visitThisExpr: (expr: This) => T,
     visitUnaryExpr: (expr: Unary) => T,
     visitVariableExpr: (expr: Variable) => T,
     visitCommaExpr: (expr: Comma) => T,
@@ -65,6 +69,20 @@ export class Call implements Expr {
     }
 }
 
+export class Get implements Expr {
+    object: Expr;
+    name: Token;
+
+    accept<T>(visitor: Visitor<T>): T {
+        return visitor.visitGetExpr(this);
+    }
+
+    constructor(object: Expr, name: Token) {
+        this.object = object;
+        this.name = name;
+    }
+}
+
 export class Grouping implements Expr {
     expression: Expr;
 
@@ -102,6 +120,48 @@ export class Logical implements Expr {
         this.left = left;
         this.operator = operator;
         this.right = right;
+    }
+}
+
+export class Set implements Expr {
+    object: Expr;
+    name: Token;
+    value: Expr;
+
+    accept<T>(visitor: Visitor<T>): T {
+        return visitor.visitSetExpr(this);
+    }
+
+    constructor(object: Expr, name: Token, value: Expr) {
+        this.object = object;
+        this.name = name;
+        this.value = value;
+    }
+}
+
+export class Super implements Expr {
+    keyword: Token;
+    method: Token;
+
+    accept<T>(visitor: Visitor<T>): T {
+        return visitor.visitSuperExpr(this);
+    }
+
+    constructor(keyword: Token, method: Token) {
+        this.keyword = keyword;
+        this.method = method;
+    }
+}
+
+export class This implements Expr {
+    keyword: Token;
+
+    accept<T>(visitor: Visitor<T>): T {
+        return visitor.visitThisExpr(this);
+    }
+
+    constructor(keyword: Token) {
+        this.keyword = keyword;
     }
 }
 

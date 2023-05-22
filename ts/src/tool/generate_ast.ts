@@ -43,7 +43,7 @@ function defineAst(out_dir: string, base_name: string, types: string[]) {
     const lines: string[] = [];
 
     if (base_name === "Stmt") {
-        lines.push('import { Expr } from "./Expr.js";');
+        lines.push('import { Expr, Variable } from "./Expr.js";');
     }
 
     lines.push('import { Token } from "./token.js";');
@@ -78,9 +78,13 @@ function main() {
         "Assign     > name: Token, value: Expr",
         "Binary     > left: Expr, operator: Token, right: Expr",
         "Call       > callee: Expr, paren: Token, args: Expr[]",
+        "Get        > object: Expr, name: Token",
         "Grouping   > expression: Expr",
         "Literal    > value: Value",
         "Logical    > left: Expr, operator: Token, right: Expr",
+        "Set        > object: Expr, name: Token, value: Expr",
+        "Super      > keyword: Token, method: Token",
+        "This       > keyword: Token",
         "Unary      > operator: Token, right: Expr",
         "Variable   > name: Token",
         "Comma      > left: Expr, right: Expr",
@@ -89,6 +93,7 @@ function main() {
 
     defineAst(out_dir, "Stmt", [
         "Block      > statements: Stmt[]",
+        "Class      > name: Token, superclass: Variable | null, methods: Func[]",
         "Expression > expression: Expr",
         "Func       > name: Token, params: Token[], body: Stmt[]",
         "If         > condition: Expr, then_branch: Stmt, else_branch: Stmt | null",
