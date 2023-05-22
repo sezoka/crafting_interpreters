@@ -50,7 +50,7 @@ export class Interpreter implements ExprVisitor<Value>, StmtVisitor<void> {
     constructor() {
         const clock: LoxCallable = {
             arity(): number { return 0; },
-            call(): Value { return Math.trunc(performance.now() * 1000); },
+            call(): Value { return Math.trunc(performance.now() / 1000); },
             toString(): string { return "<native fn>"; }
         }
         this.globals.define("clock", clock);

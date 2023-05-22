@@ -1,19 +1,11 @@
-class A {
-  method() {
-    print "A method";
-  }
+fun fib(n) {
+  if (n < 2) return n;
+  return fib(n - 1) + fib(n - 2); 
 }
 
-class B < A {
-  method() {
-    print "B method";
-  }
-
-  test() {
-    super.method();
-  }
-}
-
-class C < B {}
-
-C().test();
+var before = clock();
+print fib(40);
+var after = clock();
+print after - before;
+print "
+";
