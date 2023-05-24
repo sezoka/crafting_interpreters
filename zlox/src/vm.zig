@@ -6,6 +6,8 @@ const Op_Code = @import("./chunk.zig").Op_Code;
 const value = @import("./value.zig");
 const Value = value.Value;
 const debug = @import("./debug.zig");
+const Scanner = @import("./scanner.zig").Scanner;
+const compiler = @import("./compiler.zig");
 
 pub const Interpret_Error = error{
     Compile_Error,
@@ -36,12 +38,6 @@ pub const VM = struct {
 
     pub fn deinit(self: *Self) void {
         _ = self;
-    }
-
-    pub fn interpret(self: *Self, chunk: Chunk) Interpret_Error!void {
-        self.chunk = chunk;
-        self.ip = @ptrCast([*]u8, &self.chunk.code.items[0]);
-        return self.run();
     }
 
     fn stack_reset(self: *Self) void {
@@ -87,11 +83,17 @@ pub const VM = struct {
         try self.stack_push(result);
     }
 
+    pub fn interpret(self: *Self, source: []const u8) Interpret_Error!void {
+        _ = self;
+        compiler.compile(source);
+    }
+
     fn run(self: *Self) Interpret_Error!void {
         while (true) {
             if (builtin.mode == .Debug) {
                 std.debug.print("          ", .{});
-                for (0..self.stack.len) |i| {
+                var i = 0;
+                while (i < self.stack.len) : (i += 1) {
                     std.debug.print("[ ", .{});
                     value.print(self.stack.buffer[i]);
                     std.debug.print(" ]", .{});
