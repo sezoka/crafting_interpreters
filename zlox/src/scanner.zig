@@ -2,7 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const ascii = std.ascii;
 
-const Token_Kind = enum {
+pub const Token_Kind = enum {
     left_paren,
     right_paren,
     left_brace,
@@ -50,16 +50,16 @@ const Token_Kind = enum {
     eof,
 };
 
-const Token = struct {
+pub const Token = struct {
     kind: Token_Kind,
     lexeme: []const u8,
-    line: usize,
+    line: u16,
 };
 
 pub const Scanner = struct {
     start: [*]const u8,
     current: [*]const u8,
-    line: u32,
+    line: u16,
     end: usize,
 
     const Self = @This();

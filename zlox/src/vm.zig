@@ -7,7 +7,7 @@ const value = @import("./value.zig");
 const Value = value.Value;
 const debug = @import("./debug.zig");
 const Scanner = @import("./scanner.zig").Scanner;
-const compiler = @import("./compiler.zig");
+const Compiler = @import("./compiler.zig").Compiler;
 
 pub const Interpret_Error = error{
     Compile_Error,
@@ -84,15 +84,25 @@ pub const VM = struct {
     }
 
     pub fn interpret(self: *Self, source: []const u8) Interpret_Error!void {
-        _ = self;
-        compiler.compile(source);
+        var compiler = Compiler.init(self.alloc);
+        defer compiler.deinit();
+
+        const chunk = compiler.compile(source) catch return Interpret_Error.Compile_Error;
+        defer chunk.deinit();
+
+        self.chunk = chunk;
+        self.ip = @ptrCast([*]u8, self.chunk.code.items.ptr);
+
+        try self.run();
     }
 
     fn run(self: *Self) Interpret_Error!void {
+        if (self.chunk.code.items.len == 0) return;
+
         while (true) {
             if (builtin.mode == .Debug) {
                 std.debug.print("          ", .{});
-                var i = 0;
+                var i: usize = 0;
                 while (i < self.stack.len) : (i += 1) {
                     std.debug.print("[ ", .{});
                     value.print(self.stack.buffer[i]);

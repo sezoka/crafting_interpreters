@@ -89,6 +89,7 @@ fn main_2() !void {
     // try debug.disassemble_chunk(chunk, "test chunk");
 }
 
-pub fn main() void {
-    main_2() catch |err| std.debug.print("Error Occured {any}\n", .{err});
+pub fn main() !void {
+    return main_2();
+    // main_2() catch |err| std.debug.print("Error Occured {any}\n", .{err});
 }

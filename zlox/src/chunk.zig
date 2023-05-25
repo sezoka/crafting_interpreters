@@ -41,7 +41,7 @@ pub const Chunk = struct {
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         self.code.deinit();
         self.constants.deinit();
         self.lines.deinit();
