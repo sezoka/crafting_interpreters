@@ -3,11 +3,13 @@ const log = std.log;
 const builtin = @import("builtin");
 const debug = @import("./debug.zig");
 const Scanner = @import("./scanner.zig").Scanner;
-const Value = @import("./value.zig").Value;
+const value = @import("./value.zig");
+const Value = value.Value;
 const Token = @import("./scanner.zig").Token;
 const Token_Kind = @import("./scanner.zig").Token_Kind;
 const Chunk = @import("./chunk.zig").Chunk;
 const Op_Code = @import("./chunk.zig").Op_Code;
+const VM = @import("./vm.zig").VM;
 
 const Precedence = enum(u8) {
     none,
@@ -36,6 +38,8 @@ pub const Compiler = struct {
     compiling_chunk: Chunk,
     had_error: bool,
     panic_mode: bool,
+
+    vm: *VM,
     alloc: std.mem.Allocator,
 
     const Self = @This();
@@ -48,7 +52,7 @@ pub const Compiler = struct {
         precedence: Precedence,
     };
 
-    pub fn init(alloc: std.mem.Allocator) Self {
+    pub fn init(vm: *VM) Self {
         return .{
             .previous = undefined,
             .current = undefined,
@@ -57,7 +61,8 @@ pub const Compiler = struct {
             .had_error = false,
             .panic_mode = false,
 
-            .alloc = alloc,
+            .vm = vm,
+            .alloc = vm.alloc,
         };
     }
 
@@ -136,8 +141,22 @@ pub const Compiler = struct {
     }
 
     fn number(self: *Self) void {
-        const value = std.fmt.parseFloat(f32, self.previous.lexeme) catch unreachable;
-        self.compiling_chunk.append_constant(Value.init_num(value), self.previous.line) catch unreachable;
+        const val = std.fmt.parseFloat(f32, self.previous.lexeme) catch unreachable;
+        self.compiling_chunk.append_constant(Value.init_num(val), self.previous.line) catch unreachable;
+    }
+
+    fn string(self: *Self) void {
+        const src_str = self.previous.lexeme[1 .. self.previous.lexeme.len - 1];
+        const dst_str = self.alloc.alloc(u8, src_str.len) catch @panic("SDFDSF");
+        @memcpy(dst_str, src_str);
+
+        const str_obj = self.alloc.create(value.Obj_String) catch @panic("SaFeTy");
+        str_obj.* = value.Obj_String.init(dst_str);
+
+        const obj_ptr = @ptrCast(*value.Obj, str_obj);
+        self.vm.obj_push(obj_ptr);
+
+        self.compiling_chunk.append_constant(Value.init_obj(obj_ptr), self.previous.line) catch @panic("oh i believe in yesterday");
     }
 
     fn unary(self: *Self) void {
@@ -262,7 +281,7 @@ pub const Compiler = struct {
             .less => make_rule(null, binary, .comparison),
             .less_equal => make_rule(null, binary, .comparison),
             .identifier => make_rule(null, null, .none),
-            .string => make_rule(null, null, .none),
+            .string => make_rule(string, null, .none),
             .number => make_rule(number, null, .none),
             .and_ => make_rule(null, null, .none),
             .class => make_rule(null, null, .none),

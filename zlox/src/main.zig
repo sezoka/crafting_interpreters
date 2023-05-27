@@ -28,9 +28,9 @@ fn run_file(vm: *VM, file_path: []const u8) !void {
 }
 
 fn repl(vm: *VM) !void {
-    var arena = std.heap.ArenaAllocator.init(vm.alloc);
-    const arena_alloc = arena.allocator();
-    defer arena.deinit();
+    // var arena = std.heap.ArenaAllocator.init(vm.alloc);
+    // const arena_alloc = arena.allocator();
+    // defer arena.deinit();
 
     const stdin = std.io.getStdIn();
     const reader = stdin.reader();
@@ -40,12 +40,14 @@ fn repl(vm: *VM) !void {
     while (true) {
         _ = try writer.write("> ");
 
-        var line = try reader.readUntilDelimiterOrEofAlloc(arena_alloc, '\n', 256) orelse break;
+        var line = try reader.readUntilDelimiterOrEofAlloc(vm.alloc, '\n', 256) orelse break;
+        defer vm.alloc.free(line);
+
         if (line.len != 0) {
             try vm.interpret(line);
         }
 
-        _ = arena.reset(.retain_capacity);
+        // _ = arena.reset(.retain_capacity);
     }
 }
 

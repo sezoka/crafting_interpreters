@@ -22,6 +22,7 @@ pub const VM = struct {
     chunk: Chunk,
     ip: [*]u8,
     stack: Stack,
+    objects: ?*value.Obj,
     alloc: Allocator,
 
     const Self = @This();
@@ -31,13 +32,14 @@ pub const VM = struct {
             .chunk = undefined,
             .ip = undefined,
             .stack = Stack.init(0) catch unreachable,
+            .objects = null,
             .alloc = alloc,
         };
         return vm;
     }
 
     pub fn deinit(self: *Self) void {
-        _ = self;
+        self.objects_free();
     }
 
     fn stack_reset(self: *Self) void {
@@ -50,6 +52,30 @@ pub const VM = struct {
 
     fn stack_pop(self: *Self) Interpret_Error!Value {
         return self.stack.popOrNull() orelse return Interpret_Error.Runtime_Error;
+    }
+
+    pub fn obj_push(self: *Self, obj: *value.Obj) void {
+        obj.next = self.objects;
+        self.objects = obj;
+    }
+
+    fn obj_free(self: *Self, obj: *value.Obj) void {
+        switch (obj.kind) {
+            .string => {
+                const str = @ptrCast(*value.Obj_String, @alignCast(@alignOf(*value.Obj_String), obj));
+                self.alloc.free(str.chars[0..str.len]);
+                self.alloc.destroy(str);
+            },
+        }
+    }
+
+    fn objects_free(self: *Self) void {
+        var obj = self.objects;
+        while (obj) |o| {
+            const next = o.next;
+            self.obj_free(o);
+            obj = next;
+        }
     }
 
     fn read_byte(self: *Self) u8 {
@@ -91,7 +117,7 @@ pub const VM = struct {
     }
 
     pub fn interpret(self: *Self, source: []const u8) Interpret_Error!void {
-        var compiler = Compiler.init(self.alloc);
+        var compiler = Compiler.init(self);
         defer compiler.deinit();
 
         const chunk = compiler.compile(source) catch return Interpret_Error.Compile_Error;
@@ -117,6 +143,17 @@ pub const VM = struct {
 
     fn peek(self: *Self, distance: usize) *Value {
         return &self.stack.buffer[self.stack.len - 1 - distance];
+    }
+
+    fn concatenate(self: *Self) void {
+        const b = (self.stack_pop() catch @panic("anyway")).as_string_slice();
+        const a = (self.stack_pop() catch @panic("yawyna")).as_string_slice();
+        const new_str = std.mem.concat(self.alloc, u8, &.{ a, b }) catch @panic("");
+        const new_obj = self.alloc.create(value.Obj_String) catch @panic("i should start doing normal error handling");
+        new_obj.* = value.Obj_String.init(new_str);
+        const result = Value.init_obj(@ptrCast(*value.Obj, new_obj));
+        self.obj_push(result.kind.obj);
+        self.stack_push(result) catch @panic("(");
     }
 
     fn run(self: *Self) Interpret_Error!void {
@@ -170,7 +207,16 @@ pub const VM = struct {
                 },
                 Op_Code.op_greater.byte() => try self.binary_op('>'),
                 Op_Code.op_less.byte() => try self.binary_op('<'),
-                Op_Code.op_add.byte() => try self.binary_op('+'),
+                Op_Code.op_add.byte() => {
+                    if (self.peek(0).is_string() and self.peek(1).is_string()) {
+                        self.concatenate();
+                    } else if (self.peek(0).is_num() and self.peek(1).is_num()) {
+                        try self.binary_op('+');
+                    } else {
+                        self.runtime_error("Operands must be two numbers or two strings.", .{});
+                        return Interpret_Error.Runtime_Error;
+                    }
+                },
                 Op_Code.op_subtract.byte() => try self.binary_op('-'),
                 Op_Code.op_multiply.byte() => try self.binary_op('*'),
                 Op_Code.op_divide.byte() => try self.binary_op('/'),
