@@ -42,7 +42,7 @@ pub const Token_Kind = enum {
     return_,
     super,
     this,
-    true,
+    true_,
     var_,
     while_,
 
@@ -145,7 +145,7 @@ pub const Scanner = struct {
                 if (1 < token_len) {
                     break :blk switch (self.start[1]) {
                         'h' => self.check_keyword(2, "is", .this),
-                        'r' => self.check_keyword(2, "ue", .true),
+                        'r' => self.check_keyword(2, "ue", .true_),
                         else => .identifier,
                     };
                 }

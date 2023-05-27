@@ -4,14 +4,21 @@ const Value_Array = @import("./value.zig").Value_Array;
 const Value = @import("./value.zig").Value;
 
 pub const Op_Code = enum(u8) {
-    op_constant,
     op_add,
-    op_subtract,
-    op_multiply,
-    op_divide,
-    op_negate,
+    op_constant,
     op_constant_long,
+    op_divide,
+    op_false,
+    op_equal,
+    op_greater,
+    op_less,
+    op_multiply,
+    op_negate,
+    op_nil,
+    op_not,
     op_return,
+    op_subtract,
+    op_true,
 
     const Self = @This();
 

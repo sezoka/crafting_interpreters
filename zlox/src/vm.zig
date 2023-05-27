@@ -41,7 +41,7 @@ pub const VM = struct {
     }
 
     fn stack_reset(self: *Self) void {
-        self.stack_top = @ptrCast([*]Value, &self.stack.items[0]);
+        self.stack.resize(0) catch @panic("UUUGH\n");
     }
 
     fn stack_push(self: *Self, val: Value) Interpret_Error!void {
@@ -71,13 +71,20 @@ pub const VM = struct {
     }
 
     fn binary_op(self: *Self, comptime op: u8) Interpret_Error!void {
-        const b = try self.stack_pop();
-        const a = try self.stack_pop();
+        if (!self.peek(0).is_num() or !self.peek(1).is_num()) {
+            self.runtime_error("Operands must be numbers.", .{});
+            return Interpret_Error.Runtime_Error;
+        }
+
+        const b = (try self.stack_pop()).kind.number;
+        const a = (try self.stack_pop()).kind.number;
         const result = switch (op) {
-            '+' => a + b,
-            '-' => a - b,
-            '*' => a * b,
-            '/' => a / b,
+            '+' => Value.init_num(a + b),
+            '-' => Value.init_num(a - b),
+            '*' => Value.init_num(a * b),
+            '/' => Value.init_num(a / b),
+            '<' => Value.init_bool(a < b),
+            '>' => Value.init_bool(a < b),
             else => unreachable,
         };
         try self.stack_push(result);
@@ -96,6 +103,22 @@ pub const VM = struct {
         try self.run();
     }
 
+    fn runtime_error(self: *Self, comptime format: []const u8, args: anytype) void {
+        const stderr = std.io.getStdErr();
+        const writer = stderr.writer();
+        _ = writer.print(format, args) catch {};
+        _ = writer.write("\n") catch {};
+
+        const instruction = @ptrToInt(self.ip) - @ptrToInt(self.chunk.code.items.ptr - 1);
+        const line = self.chunk.lines.items[instruction];
+        _ = writer.print("[line {d}] in script\n", .{line}) catch {};
+        self.stack_reset();
+    }
+
+    fn peek(self: *Self, distance: usize) *Value {
+        return &self.stack.buffer[self.stack.len - 1 - distance];
+    }
+
     fn run(self: *Self) Interpret_Error!void {
         if (self.chunk.code.items.len == 0) return;
 
@@ -105,7 +128,7 @@ pub const VM = struct {
                 var i: usize = 0;
                 while (i < self.stack.len) : (i += 1) {
                     std.debug.print("[ ", .{});
-                    value.print(self.stack.buffer[i]);
+                    value.Value.print(self.stack.buffer[i]);
                     std.debug.print(" ]", .{});
                 }
                 std.debug.print("\n", .{});
@@ -123,19 +146,38 @@ pub const VM = struct {
                     try self.stack_push(constant);
                 },
                 Op_Code.op_negate.byte() => {
-                    const val = &self.stack.buffer[self.stack.len - 1];
-                    val.* = -(val.*);
+                    // const val = &self.stack.buffer[self.stack.len - 1];
+                    var val = self.peek(0);
+                    if (!(val.*).is_num()) {
+                        self.runtime_error("Operand must be a number.", .{});
+                        return Interpret_Error.Runtime_Error;
+                    }
+                    val.kind.number = -val.kind.number;
                 },
                 Op_Code.op_return.byte() => {
                     const val = try self.stack_pop();
-                    value.print(val);
+                    val.print();
                     std.debug.print("\n", .{});
                     return;
                 },
+                Op_Code.op_nil.byte() => try self.stack_push(Value.init_nil()),
+                Op_Code.op_true.byte() => try self.stack_push(Value.init_bool(true)),
+                Op_Code.op_false.byte() => try self.stack_push(Value.init_bool(false)),
+                Op_Code.op_equal.byte() => {
+                    const a = try self.stack_pop();
+                    const b = try self.stack_pop();
+                    try self.stack_push(Value.init_bool(a.equal(b)));
+                },
+                Op_Code.op_greater.byte() => try self.binary_op('>'),
+                Op_Code.op_less.byte() => try self.binary_op('<'),
                 Op_Code.op_add.byte() => try self.binary_op('+'),
                 Op_Code.op_subtract.byte() => try self.binary_op('-'),
                 Op_Code.op_multiply.byte() => try self.binary_op('*'),
                 Op_Code.op_divide.byte() => try self.binary_op('/'),
+                Op_Code.op_not.byte() => {
+                    const val = try self.stack_pop();
+                    try self.stack_push(Value.init_bool(val.is_falsey()));
+                },
                 else => return Interpret_Error.Runtime_Error,
             }
         }

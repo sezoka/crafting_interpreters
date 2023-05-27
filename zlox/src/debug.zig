@@ -24,10 +24,17 @@ pub fn disassemble_instruction(chunk: Chunk, offset: usize) !usize {
     const instruction = chunk.code.items[offset];
 
     switch (instruction) {
+        Op_Code.op_nil.byte() => return simple_instruction("OP_NIL", offset),
+        Op_Code.op_true.byte() => return simple_instruction("OP_TRUE", offset),
+        Op_Code.op_false.byte() => return simple_instruction("OP_FALSE", offset),
+        Op_Code.op_equal.byte() => return simple_instruction("OP_EQUAL", offset),
+        Op_Code.op_greater.byte() => return simple_instruction("OP_GREATER", offset),
+        Op_Code.op_less.byte() => return simple_instruction("OP_LESS", offset),
         Op_Code.op_add.byte() => return simple_instruction("OP_ADD", offset),
         Op_Code.op_subtract.byte() => return simple_instruction("OP_SUBTRACT", offset),
         Op_Code.op_multiply.byte() => return simple_instruction("OP_MULTIPLY", offset),
         Op_Code.op_divide.byte() => return simple_instruction("OP_DIVIDE", offset),
+        Op_Code.op_not.byte() => return simple_instruction("OP_NOT", offset),
         Op_Code.op_constant.byte() => return constant_instruction("OP_CONSTANT", chunk, offset),
         Op_Code.op_constant_long.byte() => return constant_long_instruction("OP_CONSTANT_LONG", chunk, offset),
         Op_Code.op_negate.byte() => return simple_instruction("OP_NEGATE", offset),
@@ -56,7 +63,7 @@ fn constant_instruction(name: []const u8, chunk: Chunk, offset: usize) usize {
 
 fn print_constant(name: []const u8, chunk: Chunk, idx: usize) void {
     std.debug.print("{s:<16} {d:4} '", .{ name, idx });
-    value.print(chunk.constants.items[idx]);
+    value.Value.print(chunk.constants.items[idx]);
     std.debug.print("'\n", .{});
 }
 

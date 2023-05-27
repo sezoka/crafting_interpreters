@@ -71,8 +71,6 @@ pub const Compiler = struct {
         self.scanner = Scanner.init(source);
         var line: usize = 0;
 
-        _ = get_rule(.left_paren);
-
         self.advance();
         self.previous = self.current;
         self.expression();
@@ -138,8 +136,8 @@ pub const Compiler = struct {
     }
 
     fn number(self: *Self) void {
-        const value = std.fmt.parseFloat(Value, self.previous.lexeme) catch unreachable;
-        self.compiling_chunk.append_constant(value, self.previous.line) catch unreachable;
+        const value = std.fmt.parseFloat(f32, self.previous.lexeme) catch unreachable;
+        self.compiling_chunk.append_constant(Value.init_num(value), self.previous.line) catch unreachable;
     }
 
     fn unary(self: *Self) void {
@@ -147,6 +145,7 @@ pub const Compiler = struct {
         self.parse_precedence(.unary);
 
         const maybe_error = switch (operator_kind) {
+            .bang => self.emit_byte(Op_Code.op_not.byte()),
             .minus => self.emit_byte(Op_Code.op_negate.byte()),
             else => unreachable,
         };
@@ -160,6 +159,12 @@ pub const Compiler = struct {
         self.parse_precedence(@intToEnum(Precedence, rule.precedence.id() + 1));
 
         const maybe_error = switch (operator_kind) {
+            .bang_equal => self.emit_bytes(Op_Code.op_equal.byte(), Op_Code.op_not.byte()),
+            .equal_equal => self.emit_byte(Op_Code.op_equal.byte()),
+            .greater => self.emit_byte(Op_Code.op_greater.byte()),
+            .greater_equal => self.emit_bytes(Op_Code.op_less.byte(), Op_Code.op_not.byte()),
+            .less => self.emit_byte(Op_Code.op_less.byte()),
+            .less_equal => self.emit_byte(Op_Code.op_greater.byte()),
             .plus => self.emit_byte(Op_Code.op_add.byte()),
             .minus => self.emit_byte(Op_Code.op_subtract.byte()),
             .star => self.emit_byte(Op_Code.op_multiply.byte()),
@@ -168,6 +173,17 @@ pub const Compiler = struct {
         };
 
         maybe_error catch @panic("Just buy more memory\n");
+    }
+
+    fn literal(self: *Self) void {
+        const maybe_error = switch (self.previous.kind) {
+            .false_ => self.emit_byte(Op_Code.op_false.byte()),
+            .nil => self.emit_byte(Op_Code.op_nil.byte()),
+            .true_ => self.emit_byte(Op_Code.op_true.byte()),
+            else => unreachable,
+        };
+
+        maybe_error catch @panic("That's very sad :(\n");
     }
 
     fn parse_precedence(self: *Self, precedence: Precedence) void {
@@ -179,10 +195,11 @@ pub const Compiler = struct {
 
         prefix_rule(self);
 
-        while (precedence.id() <= get_rule(self.current.kind).precedence.id()) {
+        while (self.current.kind != .eof and precedence.id() <= get_rule(self.current.kind).precedence.id()) {
             _ = self.advance();
             const infix_rule = get_rule(self.previous.kind).infix orelse {
                 self.error_("Expect expression");
+                std.debug.print("{any}\n", .{self.previous.kind});
                 return;
             };
             infix_rule(self);
@@ -214,9 +231,9 @@ pub const Compiler = struct {
         err_writer.print("[line {d}] Error", .{token.line}) catch {};
 
         if (token.kind == .eof) {
-            err_writer.writeAll(" at end") catch {};
+            err_writer.writeAll(" at end. ") catch {};
         } else if (token.kind == .error_) {} else {
-            err_writer.print(" at '{s}' ", .{token.lexeme}) catch {};
+            err_writer.print(" at '{s}'. ", .{token.lexeme}) catch {};
         }
 
         err_writer.print("{s}\n", .{message}) catch {};
@@ -236,31 +253,31 @@ pub const Compiler = struct {
             .semicolon => make_rule(null, null, .none),
             .slash => make_rule(null, binary, .factor),
             .star => make_rule(null, binary, .factor),
-            .bang => make_rule(null, null, .none),
-            .bang_equal => make_rule(null, null, .none),
+            .bang => make_rule(unary, null, .none),
+            .bang_equal => make_rule(null, binary, .equality),
             .equal => make_rule(null, null, .none),
-            .equal_equal => make_rule(null, null, .none),
-            .greater => make_rule(null, null, .none),
-            .greater_equal => make_rule(null, null, .none),
-            .less => make_rule(null, null, .none),
-            .less_equal => make_rule(null, null, .none),
+            .equal_equal => make_rule(null, binary, .equality),
+            .greater => make_rule(null, binary, .comparison),
+            .greater_equal => make_rule(null, binary, .comparison),
+            .less => make_rule(null, binary, .comparison),
+            .less_equal => make_rule(null, binary, .comparison),
             .identifier => make_rule(null, null, .none),
             .string => make_rule(null, null, .none),
             .number => make_rule(number, null, .none),
             .and_ => make_rule(null, null, .none),
             .class => make_rule(null, null, .none),
             .else_ => make_rule(null, null, .none),
-            .false_ => make_rule(null, null, .none),
+            .false_ => make_rule(literal, null, .none),
             .for_ => make_rule(null, null, .none),
             .fun => make_rule(null, null, .none),
             .if_ => make_rule(null, null, .none),
-            .nil => make_rule(null, null, .none),
+            .nil => make_rule(literal, null, .none),
             .or_ => make_rule(null, null, .none),
             .print => make_rule(null, null, .none),
             .return_ => make_rule(null, null, .none),
             .super => make_rule(null, null, .none),
             .this => make_rule(null, null, .none),
-            .true => make_rule(null, null, .none),
+            .true_ => make_rule(literal, null, .none),
             .var_ => make_rule(null, null, .none),
             .while_ => make_rule(null, null, .none),
             .error_ => make_rule(null, null, .none),
