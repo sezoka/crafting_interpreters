@@ -11,6 +11,10 @@ const Chunk = @import("./chunk.zig").Chunk;
 const Op_Code = @import("./chunk.zig").Op_Code;
 const VM = @import("./vm.zig").VM;
 
+const Compile_Error = error{
+    OutOfMemory,
+};
+
 const Precedence = enum(u8) {
     none,
     assignment,
@@ -150,9 +154,7 @@ pub const Compiler = struct {
         const dst_str = self.alloc.alloc(u8, src_str.len) catch @panic("SDFDSF");
         @memcpy(dst_str, src_str);
 
-        const str_obj = self.alloc.create(value.Obj_String) catch @panic("SaFeTy");
-        str_obj.* = value.Obj_String.init(dst_str);
-
+        const str_obj = value.Obj_String.init(dst_str, self.vm) catch @panic("rsdf");
         const obj_ptr = @ptrCast(*value.Obj, str_obj);
         self.vm.obj_push(obj_ptr);
 

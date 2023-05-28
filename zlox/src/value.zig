@@ -1,4 +1,5 @@
 const std = @import("std");
+const VM = @import("vm.zig").VM;
 
 const Number = f32;
 
@@ -24,8 +25,21 @@ pub const Obj_String = packed struct {
 
     const Self = @This();
 
-    pub fn init(slice: []const u8) Self {
-        return .{ .obj = Obj.init(.string), .chars = slice.ptr, .len = slice.len };
+    pub fn init(slice: []const u8, vm: *VM) !*Self {
+        var interned_slice: []const u8 = undefined;
+
+        if (vm.strings.getKey(slice)) |s| {
+            interned_slice = s;
+            vm.alloc.free(slice);
+        } else {
+            try vm.strings.put(slice, undefined);
+            interned_slice = vm.strings.getKey(slice) orelse unreachable;
+        }
+
+        const obj_ptr = try vm.alloc.create(Self);
+        obj_ptr.* = .{ .obj = Obj.init(.string), .chars = interned_slice.ptr, .len = interned_slice.len };
+
+        return obj_ptr;
     }
 };
 
@@ -105,9 +119,10 @@ pub const Value = struct {
             .number => |a_val| a_val == b.kind.number,
             .bool => |a_val| a_val == b.kind.bool,
             .obj => {
-                const a_str = a.as_string_slice();
-                const b_str = b.as_string_slice();
-                return std.mem.eql(u8, a_str, b_str);
+                const a_str = a.as_string();
+                const b_str = b.as_string();
+
+                return a_str.chars == b_str.chars;
             },
         };
     }

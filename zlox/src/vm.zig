@@ -17,12 +17,15 @@ pub const Interpret_Error = error{
 const stack_max = 256;
 
 const Stack = std.BoundedArray(Value, stack_max);
+const Strings_Set = std.StringHashMap(void);
 
 pub const VM = struct {
     chunk: Chunk,
     ip: [*]u8,
     stack: Stack,
     objects: ?*value.Obj,
+    strings: Strings_Set,
+
     alloc: Allocator,
 
     const Self = @This();
@@ -33,6 +36,8 @@ pub const VM = struct {
             .ip = undefined,
             .stack = Stack.init(0) catch unreachable,
             .objects = null,
+            .strings = Strings_Set.init(alloc),
+
             .alloc = alloc,
         };
         return vm;
@@ -40,6 +45,7 @@ pub const VM = struct {
 
     pub fn deinit(self: *Self) void {
         self.objects_free();
+        self.strings_free();
     }
 
     fn stack_reset(self: *Self) void {
@@ -59,11 +65,18 @@ pub const VM = struct {
         self.objects = obj;
     }
 
+    fn strings_free(self: *Self) void {
+        var iter = self.strings.keyIterator();
+        while (iter.next()) |str| {
+            self.alloc.free(str.*);
+        }
+        self.strings.deinit();
+    }
+
     fn obj_free(self: *Self, obj: *value.Obj) void {
         switch (obj.kind) {
             .string => {
                 const str = @ptrCast(*value.Obj_String, @alignCast(@alignOf(*value.Obj_String), obj));
-                self.alloc.free(str.chars[0..str.len]);
                 self.alloc.destroy(str);
             },
         }
@@ -145,15 +158,14 @@ pub const VM = struct {
         return &self.stack.buffer[self.stack.len - 1 - distance];
     }
 
-    fn concatenate(self: *Self) void {
-        const b = (self.stack_pop() catch @panic("anyway")).as_string_slice();
-        const a = (self.stack_pop() catch @panic("yawyna")).as_string_slice();
-        const new_str = std.mem.concat(self.alloc, u8, &.{ a, b }) catch @panic("");
-        const new_obj = self.alloc.create(value.Obj_String) catch @panic("i should start doing normal error handling");
-        new_obj.* = value.Obj_String.init(new_str);
+    fn concatenate(self: *Self) Interpret_Error!void {
+        const b = (try self.stack_pop()).as_string_slice();
+        const a = (try self.stack_pop()).as_string_slice();
+        const new_str = std.mem.concat(self.alloc, u8, &.{ a, b }) catch return Interpret_Error.Runtime_Error;
+        const new_obj = value.Obj_String.init(new_str, self) catch return Interpret_Error.Runtime_Error;
         const result = Value.init_obj(@ptrCast(*value.Obj, new_obj));
         self.obj_push(result.kind.obj);
-        self.stack_push(result) catch @panic("(");
+        try self.stack_push(result);
     }
 
     fn run(self: *Self) Interpret_Error!void {
@@ -209,7 +221,7 @@ pub const VM = struct {
                 Op_Code.op_less.byte() => try self.binary_op('<'),
                 Op_Code.op_add.byte() => {
                     if (self.peek(0).is_string() and self.peek(1).is_string()) {
-                        self.concatenate();
+                        try self.concatenate();
                     } else if (self.peek(0).is_num() and self.peek(1).is_num()) {
                         try self.binary_op('+');
                     } else {
