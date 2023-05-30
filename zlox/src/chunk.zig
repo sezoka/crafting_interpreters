@@ -13,6 +13,7 @@ pub const Op_Code = enum(u8) {
     op_greater,
     op_less,
     op_multiply,
+    op_print,
     op_negate,
     op_nil,
     op_not,

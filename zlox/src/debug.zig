@@ -38,6 +38,7 @@ pub fn disassemble_instruction(chunk: Chunk, offset: usize) !usize {
         Op_Code.op_constant.byte() => return constant_instruction("OP_CONSTANT", chunk, offset),
         Op_Code.op_constant_long.byte() => return constant_long_instruction("OP_CONSTANT_LONG", chunk, offset),
         Op_Code.op_negate.byte() => return simple_instruction("OP_NEGATE", offset),
+        Op_Code.op_print.byte() => return simple_instruction("OP_PRINT", offset),
         Op_Code.op_return.byte() => return simple_instruction("OP_RETURN", offset),
         else => std.debug.print("Unknown opcode {d}\n", .{instruction}),
     }

@@ -171,6 +171,8 @@ pub const VM = struct {
     fn run(self: *Self) Interpret_Error!void {
         if (self.chunk.code.items.len == 0) return;
 
+        const writer = std.io.getStdOut().writer();
+
         while (true) {
             if (builtin.mode == .Debug) {
                 std.debug.print("          ", .{});
@@ -203,10 +205,12 @@ pub const VM = struct {
                     }
                     val.kind.number = -val.kind.number;
                 },
-                Op_Code.op_return.byte() => {
+                Op_Code.op_print.byte() => {
                     const val = try self.stack_pop();
                     val.print();
-                    std.debug.print("\n", .{});
+                    writer.writeByte('\n') catch {};
+                },
+                Op_Code.op_return.byte() => {
                     return;
                 },
                 Op_Code.op_nil.byte() => try self.stack_push(Value.init_nil()),

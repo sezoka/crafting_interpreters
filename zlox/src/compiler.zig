@@ -81,9 +81,11 @@ pub const Compiler = struct {
         var line: usize = 0;
 
         self.advance();
-        self.previous = self.current;
-        self.expression();
-        self.consume(.eof, "Expect end of expression");
+
+        while (!self.match(.eof)) {
+            try self.declaration();
+        }
+
         try self.end_compiler();
 
         while (true) {
@@ -100,6 +102,32 @@ pub const Compiler = struct {
         }
 
         return self.compiling_chunk;
+    }
+
+    fn declaration(self: *Self) !void {
+        return self.statement();
+    }
+
+    fn statement(self: *Self) !void {
+        if (self.match(.print)) {
+            return self.print_statment();
+        }
+    }
+
+    fn check(self: *Self, kind: Token_Kind) bool {
+        return self.current.kind == kind;
+    }
+
+    fn print_statment(self: *Self) !void {
+        self.expression();
+        self.consume(.semicolon, "Expect ';' after value.");
+        return self.emit_byte(Op_Code.op_print.byte());
+    }
+
+    fn match(self: *Self, kind: Token_Kind) bool {
+        if (!self.check(kind)) return false;
+        self.advance();
+        return true;
     }
 
     fn advance(self: *Self) void {

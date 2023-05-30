@@ -128,14 +128,18 @@ pub const Value = struct {
     }
 
     pub fn print(self: Self) void {
-        switch (self.kind) {
-            .bool => |b| std.debug.print("{any}", .{b}),
-            .number => |num| std.debug.print("{d}", .{num}),
-            .nil => std.debug.print("nil", .{}),
+        const writer = std.io.getStdOut().writer();
+
+        const maybe_err = switch (self.kind) {
+            .bool => |b| writer.print("{any}", .{b}),
+            .number => |num| writer.print("{d}", .{num}),
+            .nil => writer.print("nil", .{}),
             .obj => |obj| switch (obj.kind) {
-                .string => std.debug.print("{s}", .{self.as_string_slice()}),
+                .string => writer.print("{s}", .{self.as_string_slice()}),
             },
-        }
+        };
+
+        maybe_err catch {};
     }
 };
 
