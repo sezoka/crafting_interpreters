@@ -10,14 +10,15 @@ const Scanner = @import("./scanner.zig").Scanner;
 const Compiler = @import("./compiler.zig").Compiler;
 
 pub const Interpret_Error = error{
-    Compile_Error,
-    Runtime_Error,
+    CompileError,
+    RuntimeError,
 };
 
 const stack_max = 256;
 
 const Stack = std.BoundedArray(Value, stack_max);
 const Strings_Set = std.StringHashMap(void);
+const Globals_Map = std.StringHashMap(Value);
 
 pub const VM = struct {
     chunk: Chunk,
@@ -25,6 +26,7 @@ pub const VM = struct {
     stack: Stack,
     objects: ?*value.Obj,
     strings: Strings_Set,
+    globals: Globals_Map,
 
     alloc: Allocator,
 
@@ -37,27 +39,33 @@ pub const VM = struct {
             .stack = Stack.init(0) catch unreachable,
             .objects = null,
             .strings = Strings_Set.init(alloc),
+            .globals = Globals_Map.init(alloc),
 
             .alloc = alloc,
         };
         return vm;
     }
 
+    fn globals_free(self: *Self) void {
+        self.globals.deinit();
+    }
+
     pub fn deinit(self: *Self) void {
         self.objects_free();
+        self.globals_free();
         self.strings_free();
     }
 
     fn stack_reset(self: *Self) void {
-        self.stack.resize(0) catch @panic("UUUGH\n");
+        self.stack.resize(0) catch unreachable;
     }
 
     fn stack_push(self: *Self, val: Value) Interpret_Error!void {
-        self.stack.append(val) catch return Interpret_Error.Runtime_Error;
+        self.stack.append(val) catch return Interpret_Error.RuntimeError;
     }
 
     fn stack_pop(self: *Self) Interpret_Error!Value {
-        return self.stack.popOrNull() orelse return Interpret_Error.Runtime_Error;
+        return self.stack.popOrNull() orelse return Interpret_Error.RuntimeError;
     }
 
     pub fn obj_push(self: *Self, obj: *value.Obj) void {
@@ -112,7 +120,7 @@ pub const VM = struct {
     fn binary_op(self: *Self, comptime op: u8) Interpret_Error!void {
         if (!self.peek(0).is_num() or !self.peek(1).is_num()) {
             self.runtime_error("Operands must be numbers.", .{});
-            return Interpret_Error.Runtime_Error;
+            return Interpret_Error.RuntimeError;
         }
 
         const b = (try self.stack_pop()).kind.number;
@@ -133,7 +141,7 @@ pub const VM = struct {
         var compiler = Compiler.init(self);
         defer compiler.deinit();
 
-        const chunk = compiler.compile(source) catch return Interpret_Error.Compile_Error;
+        const chunk = compiler.compile(source) catch return Interpret_Error.CompileError;
         defer chunk.deinit();
 
         self.chunk = chunk;
@@ -161,11 +169,16 @@ pub const VM = struct {
     fn concatenate(self: *Self) Interpret_Error!void {
         const b = (try self.stack_pop()).as_string_slice();
         const a = (try self.stack_pop()).as_string_slice();
-        const new_str = std.mem.concat(self.alloc, u8, &.{ a, b }) catch return Interpret_Error.Runtime_Error;
-        const new_obj = value.Obj_String.init(new_str, self) catch return Interpret_Error.Runtime_Error;
+        const new_str = std.mem.concat(self.alloc, u8, &.{ a, b }) catch return Interpret_Error.RuntimeError;
+        const new_obj = value.Obj_String.init(new_str, false, true, self) catch return Interpret_Error.RuntimeError;
         const result = Value.init_obj(@ptrCast(*value.Obj, new_obj));
         self.obj_push(result.kind.obj);
         try self.stack_push(result);
+    }
+
+    fn read_string(self: *Self) *value.Obj_String {
+        const val = self.read_constant();
+        return val.as_string();
     }
 
     fn run(self: *Self) Interpret_Error!void {
@@ -184,7 +197,7 @@ pub const VM = struct {
                 }
                 std.debug.print("\n", .{});
 
-                _ = debug.disassemble_instruction(self.chunk, @ptrToInt(self.ip) - @ptrToInt(&self.chunk.code.items[0])) catch return Interpret_Error.Runtime_Error;
+                _ = debug.disassemble_instruction(self.chunk, @ptrToInt(self.ip) - @ptrToInt(&self.chunk.code.items[0])) catch return Interpret_Error.RuntimeError;
             }
             const instruction = self.read_byte();
             switch (instruction) {
@@ -201,7 +214,7 @@ pub const VM = struct {
                     var val = self.peek(0);
                     if (!(val.*).is_num()) {
                         self.runtime_error("Operand must be a number.", .{});
-                        return Interpret_Error.Runtime_Error;
+                        return Interpret_Error.RuntimeError;
                     }
                     val.kind.number = -val.kind.number;
                 },
@@ -216,6 +229,33 @@ pub const VM = struct {
                 Op_Code.op_nil.byte() => try self.stack_push(Value.init_nil()),
                 Op_Code.op_true.byte() => try self.stack_push(Value.init_bool(true)),
                 Op_Code.op_false.byte() => try self.stack_push(Value.init_bool(false)),
+                Op_Code.op_pop.byte() => _ = try self.stack_pop(),
+                Op_Code.op_get_global.byte() => {
+                    const name = self.read_string();
+                    const name_str = name.chars[0..name.len];
+                    const val = self.globals.get(name_str) orelse {
+                        self.runtime_error("Undefined variable '{s}'.", .{name_str});
+                        return Interpret_Error.RuntimeError;
+                    };
+                    try self.stack_push(val);
+                },
+                Op_Code.op_define_global.byte() => {
+                    const name = self.read_string();
+                    self.globals.put(name.chars[0..name.len], self.peek(0).*) catch return Interpret_Error.RuntimeError;
+                    _ = try self.stack_pop();
+                },
+                Op_Code.op_set_global.byte() => {
+                    const name = self.read_string();
+                    const name_str = name.chars[0..name.len];
+
+                    if (self.globals.contains(name_str)) {
+                        const val = self.peek(0).*;
+                        self.globals.put(name_str, val) catch return Interpret_Error.RuntimeError;
+                    } else {
+                        self.runtime_error("Undefined variable '{s}'", .{name_str});
+                        return Interpret_Error.RuntimeError;
+                    }
+                },
                 Op_Code.op_equal.byte() => {
                     const a = try self.stack_pop();
                     const b = try self.stack_pop();
@@ -230,7 +270,7 @@ pub const VM = struct {
                         try self.binary_op('+');
                     } else {
                         self.runtime_error("Operands must be two numbers or two strings.", .{});
-                        return Interpret_Error.Runtime_Error;
+                        return Interpret_Error.RuntimeError;
                     }
                 },
                 Op_Code.op_subtract.byte() => try self.binary_op('-'),
@@ -240,7 +280,7 @@ pub const VM = struct {
                     const val = try self.stack_pop();
                     try self.stack_push(Value.init_bool(val.is_falsey()));
                 },
-                else => return Interpret_Error.Runtime_Error,
+                else => return Interpret_Error.RuntimeError,
             }
         }
     }

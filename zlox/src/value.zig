@@ -25,14 +25,22 @@ pub const Obj_String = packed struct {
 
     const Self = @This();
 
-    pub fn init(slice: []const u8, vm: *VM) !*Self {
+    pub fn init(slice: []const u8, copy_string: bool, free_string: bool, vm: *VM) !*Self {
         var interned_slice: []const u8 = undefined;
 
         if (vm.strings.getKey(slice)) |s| {
             interned_slice = s;
-            vm.alloc.free(slice);
+            if (free_string) {
+                vm.alloc.free(slice);
+            }
         } else {
-            try vm.strings.put(slice, undefined);
+            if (copy_string) {
+                const slice_copy = try vm.alloc.alloc(u8, slice.len);
+                @memcpy(slice_copy, slice);
+                try vm.strings.put(slice_copy, undefined);
+            } else {
+                try vm.strings.put(slice, undefined);
+            }
             interned_slice = vm.strings.getKey(slice) orelse unreachable;
         }
 
