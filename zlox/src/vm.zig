@@ -7,7 +7,7 @@ const value = @import("./value.zig");
 const Value = value.Value;
 const debug = @import("./debug.zig");
 const Scanner = @import("./scanner.zig").Scanner;
-const Compiler = @import("./compiler.zig").Compiler;
+const Parser = @import("./compiler.zig").Parser;
 
 pub const Interpret_Error = error{
     CompileError,
@@ -138,7 +138,7 @@ pub const VM = struct {
     }
 
     pub fn interpret(self: *Self, source: []const u8) Interpret_Error!void {
-        var compiler = Compiler.init(self);
+        var compiler = Parser.init(self);
         defer compiler.deinit();
 
         const chunk = compiler.compile(source) catch return Interpret_Error.CompileError;
@@ -230,6 +230,10 @@ pub const VM = struct {
                 Op_Code.op_true.byte() => try self.stack_push(Value.init_bool(true)),
                 Op_Code.op_false.byte() => try self.stack_push(Value.init_bool(false)),
                 Op_Code.op_pop.byte() => _ = try self.stack_pop(),
+                Op_Code.op_get_local.byte() => {
+                    const slot = self.read_byte();
+                    try self.stack_push(self.stack.buffer[slot]);
+                },
                 Op_Code.op_get_global.byte() => {
                     const name = self.read_string();
                     const name_str = name.chars[0..name.len];
@@ -243,6 +247,10 @@ pub const VM = struct {
                     const name = self.read_string();
                     self.globals.put(name.chars[0..name.len], self.peek(0).*) catch return Interpret_Error.RuntimeError;
                     _ = try self.stack_pop();
+                },
+                Op_Code.op_set_local.byte() => {
+                    const slot = self.read_byte();
+                    self.stack.buffer[slot] = self.peek(0).*;
                 },
                 Op_Code.op_set_global.byte() => {
                     const name = self.read_string();

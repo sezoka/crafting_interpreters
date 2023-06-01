@@ -30,7 +30,9 @@ pub fn disassemble_instruction(chunk: Chunk, offset: usize) !usize {
         Op_Code.op_pop.byte() => return simple_instruction("OP_POP", offset),
         Op_Code.op_define_global.byte() => return constant_instruction("OP_DEFINE_GLOBAL", chunk, offset),
         Op_Code.op_get_global.byte() => return constant_instruction("OP_GET_GLOBAL", chunk, offset),
+        Op_Code.op_get_local.byte() => return byte_instruction("OP_GET_LOCAL", chunk, offset),
         Op_Code.op_set_global.byte() => return constant_instruction("OP_SET_GLOBAL", chunk, offset),
+        Op_Code.op_set_local.byte() => return byte_instruction("OP_SET_LOCAL", chunk, offset),
         Op_Code.op_equal.byte() => return simple_instruction("OP_EQUAL", offset),
         Op_Code.op_greater.byte() => return simple_instruction("OP_GREATER", offset),
         Op_Code.op_less.byte() => return simple_instruction("OP_LESS", offset),
@@ -48,6 +50,12 @@ pub fn disassemble_instruction(chunk: Chunk, offset: usize) !usize {
     }
 
     return offset + 1;
+}
+
+fn byte_instruction(name: []const u8, chunk: Chunk, offset: usize) usize {
+    const slot = chunk.code.items[offset + 1];
+    std.debug.print("{s:<16} {d:4}\n", .{ name, slot });
+    return offset + 2;
 }
 
 fn constant_long_instruction(name: []const u8, chunk: Chunk, offset: usize) usize {
