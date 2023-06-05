@@ -45,11 +45,21 @@ pub fn disassemble_instruction(chunk: Chunk, offset: usize) !usize {
         Op_Code.op_constant_long.byte() => return constant_long_instruction("OP_CONSTANT_LONG", chunk, offset),
         Op_Code.op_negate.byte() => return simple_instruction("OP_NEGATE", offset),
         Op_Code.op_print.byte() => return simple_instruction("OP_PRINT", offset),
+        Op_Code.op_jump.byte() => return jump_instruction("OP_JUMP", 1, chunk, offset),
+        Op_Code.op_jump_if_false.byte() => return jump_instruction("OP_JUMP_IF_FALSE", 1, chunk, offset),
+        Op_Code.op_loop.byte() => return jump_instruction("OP_LOOP", -1, chunk, offset),
         Op_Code.op_return.byte() => return simple_instruction("OP_RETURN", offset),
         else => std.debug.print("Unknown opcode {d}\n", .{instruction}),
     }
 
     return offset + 1;
+}
+
+fn jump_instruction(name: []const u8, sign: isize, chunk: Chunk, offset: usize) usize {
+    var jump = @intCast(isize, chunk.code.items[offset + 1]) << 8;
+    jump |= chunk.code.items[offset + 2];
+    std.debug.print("{s:<16} {d:4} -> {d}\n", .{ name, offset, @intCast(isize, offset) + 3 + sign * jump });
+    return offset + 3;
 }
 
 fn byte_instruction(name: []const u8, chunk: Chunk, offset: usize) usize {
@@ -76,7 +86,7 @@ fn constant_instruction(name: []const u8, chunk: Chunk, offset: usize) usize {
 
 fn print_constant(name: []const u8, chunk: Chunk, idx: usize) void {
     std.debug.print("{s:<16} {d:4} '", .{ name, idx });
-    value.Value.print(chunk.constants.items[idx]);
+    value.Value.print_unbuff(chunk.constants.items[idx]);
     std.debug.print("'\n", .{});
 }
 

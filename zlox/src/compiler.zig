@@ -240,6 +240,12 @@ pub const Parser = struct {
     fn statement(self: *Self) !void {
         if (self.match(.print)) {
             return self.print_statment();
+        } else if (self.match(.for_)) {
+            try self.for_statement();
+        } else if (self.match(.if_)) {
+            try self.if_statement();
+        } else if (self.match(.while_)) {
+            try self.while_statement();
         } else if (self.match(.left_brace)) {
             self.begin_scope();
             try self.block();
@@ -247,6 +253,111 @@ pub const Parser = struct {
         } else {
             try self.expression_statement();
         }
+    }
+
+    fn for_statement(self: *Self) Compile_Error!void {
+        self.begin_scope();
+        self.consume(.left_paren, "Expect '(' after 'for'.");
+
+        if (self.match(.semicolon)) {} else if (self.match(.var_)) {
+            try self.var_declaration();
+        } else {
+            try self.expression_statement();
+        }
+
+        var loop_start: usize = self.compiling_chunk.code.items.len;
+        var exit_jump: usize = std.math.maxInt(usize);
+
+        if (!self.match(.semicolon)) {
+            try self.expression();
+            self.consume(.semicolon, "Expect ';' after loop condition.");
+
+            exit_jump = try self.emit_jump(.op_jump_if_false);
+            try self.emit_byte(Op_Code.op_pop.byte());
+        }
+
+        if (!self.match(.right_paren)) {
+            const body_jump = try self.emit_jump(.op_jump);
+            const increment_start = self.compiling_chunk.code.items.len;
+            try self.expression();
+            try self.emit_byte(Op_Code.op_pop.byte());
+            self.consume(.right_paren, "Expect ')' after for clauses.");
+
+            try self.emit_loop(loop_start);
+            loop_start = increment_start;
+            self.patch_jump(body_jump);
+        }
+
+        try self.statement();
+        try self.emit_loop(loop_start);
+
+        if (exit_jump != std.math.maxInt(usize)) {
+            self.patch_jump(exit_jump);
+            try self.emit_byte(Op_Code.op_pop.byte());
+        }
+
+        self.end_scope();
+    }
+
+    fn while_statement(self: *Self) Compile_Error!void {
+        const loop_start = self.compiling_chunk.code.items.len;
+        self.consume(.left_paren, "Expect '(' after 'while'.");
+        try self.expression();
+        self.consume(.right_paren, "Expect ')' after condition.");
+
+        const exit_jump = try self.emit_jump(.op_jump_if_false);
+        try self.emit_byte(Op_Code.op_pop.byte());
+        try self.statement();
+        try self.emit_loop(loop_start);
+
+        self.patch_jump(exit_jump);
+        try self.emit_byte(Op_Code.op_pop.byte());
+    }
+
+    fn emit_loop(self: *Self, loop_start: usize) !void {
+        try self.emit_byte(Op_Code.op_loop.byte());
+
+        const offset = self.compiling_chunk.code.items.len - loop_start + 2;
+        if (std.math.maxInt(u16) < offset) self.error_("Loop body too large.");
+
+        try self.emit_byte(@intCast(u8, (offset >> 8) & 0xff));
+        try self.emit_byte(@intCast(u8, offset & 0xff));
+    }
+
+    fn if_statement(self: *Self) Compile_Error!void {
+        self.consume(.left_paren, "Expect '(' after 'if'.");
+        try self.expression();
+        self.consume(.right_paren, "Expect ')' after condition.");
+
+        const then_jump = try self.emit_jump(.op_jump_if_false);
+        try self.emit_byte(Op_Code.op_pop.byte());
+        try self.statement();
+
+        const else_jump = try self.emit_jump(.op_jump);
+
+        self.patch_jump(then_jump);
+        try self.emit_byte(Op_Code.op_pop.byte());
+
+        if (self.match(.else_)) try self.statement();
+        self.patch_jump(else_jump);
+    }
+
+    fn emit_jump(self: *Self, instruction: Op_Code) !usize {
+        try self.emit_byte(instruction.byte());
+        try self.emit_byte(0xff);
+        try self.emit_byte(0xff);
+        return self.compiling_chunk.code.items.len - 2;
+    }
+
+    fn patch_jump(self: *Self, offset: usize) void {
+        const jump = self.compiling_chunk.code.items.len - offset - 2;
+
+        if (std.math.maxInt(u16) < jump) {
+            self.error_("Too much code to jump over.");
+        }
+
+        self.compiling_chunk.code.items[offset] = @intCast(u8, (jump >> 8)) & 0xff;
+        self.compiling_chunk.code.items[offset + 1] = @intCast(u8, jump & 0xff);
     }
 
     fn block(self: *Self) Compile_Error!void {
@@ -485,6 +596,26 @@ pub const Parser = struct {
         self.had_error = true;
     }
 
+    fn and_(self: *Self, _: bool) !void {
+        const end_jump = try self.emit_jump(.op_jump_if_false);
+
+        try self.emit_byte(Op_Code.op_pop.byte());
+        try self.parse_precedence(.and_);
+
+        self.patch_jump(end_jump);
+    }
+
+    fn or_(self: *Self, _: bool) !void {
+        const else_jump = try self.emit_jump(.op_jump_if_false);
+        const end_jump = try self.emit_jump(.op_jump);
+
+        self.patch_jump(else_jump);
+        try self.emit_byte(Op_Code.op_pop.byte());
+
+        try self.parse_precedence(.or_);
+        self.patch_jump(end_jump);
+    }
+
     fn get_rule(kind: Token_Kind) Parse_Rule {
         return switch (kind) {
             .left_paren => make_rule(grouping, null, .none),
@@ -509,7 +640,7 @@ pub const Parser = struct {
             .identifier => make_rule(variable, null, .none),
             .string => make_rule(string, null, .none),
             .number => make_rule(number, null, .none),
-            .and_ => make_rule(null, null, .none),
+            .and_ => make_rule(null, and_, .and_),
             .class => make_rule(null, null, .none),
             .else_ => make_rule(null, null, .none),
             .false_ => make_rule(literal, null, .none),
@@ -517,7 +648,7 @@ pub const Parser = struct {
             .fun => make_rule(null, null, .none),
             .if_ => make_rule(null, null, .none),
             .nil => make_rule(literal, null, .none),
-            .or_ => make_rule(null, null, .none),
+            .or_ => make_rule(null, or_, .or_),
             .print => make_rule(null, null, .none),
             .return_ => make_rule(null, null, .none),
             .super => make_rule(null, null, .none),

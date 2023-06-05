@@ -131,7 +131,7 @@ pub const VM = struct {
             '*' => Value.init_num(a * b),
             '/' => Value.init_num(a / b),
             '<' => Value.init_bool(a < b),
-            '>' => Value.init_bool(a < b),
+            '>' => Value.init_bool(a > b),
             else => unreachable,
         };
         try self.stack_push(result);
@@ -181,10 +181,18 @@ pub const VM = struct {
         return val.as_string();
     }
 
+    fn read_short(self: *Self) u16 {
+        self.ip += 2;
+        return (@intCast(u16, (self.ip - 2)[0]) << 8) | @intCast(u16, (self.ip - 1)[0]);
+    }
+
     fn run(self: *Self) Interpret_Error!void {
         if (self.chunk.code.items.len == 0) return;
 
-        const writer = std.io.getStdOut().writer();
+        const unbuff_writer = std.io.getStdOut().writer();
+        var buff = std.io.bufferedWriter(unbuff_writer);
+        const writer = buff.writer();
+        defer buff.flush() catch {};
 
         while (true) {
             if (builtin.mode == .Debug) {
@@ -192,7 +200,7 @@ pub const VM = struct {
                 var i: usize = 0;
                 while (i < self.stack.len) : (i += 1) {
                     std.debug.print("[ ", .{});
-                    value.Value.print(self.stack.buffer[i]);
+                    self.stack.buffer[i].print_unbuff();
                     std.debug.print(" ]", .{});
                 }
                 std.debug.print("\n", .{});
@@ -220,8 +228,20 @@ pub const VM = struct {
                 },
                 Op_Code.op_print.byte() => {
                     const val = try self.stack_pop();
-                    val.print();
+                    val.print(writer);
                     writer.writeByte('\n') catch {};
+                },
+                Op_Code.op_jump.byte() => {
+                    const offset = self.read_short();
+                    self.ip += offset;
+                },
+                Op_Code.op_jump_if_false.byte() => {
+                    const offset = self.read_short();
+                    if (self.peek(0).is_falsey()) self.ip += offset;
+                },
+                Op_Code.op_loop.byte() => {
+                    const offset = self.read_short();
+                    self.ip -= offset;
                 },
                 Op_Code.op_return.byte() => {
                     return;

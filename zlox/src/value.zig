@@ -7,6 +7,10 @@ pub const Obj_Kind = enum {
     string,
 };
 
+const Writer = std.io.BufferedWriter(4096, @TypeOf(std.io.getStdOut().writer())).Writer;
+
+pub const Value_Array = std.ArrayList(Value);
+
 pub const Obj = packed struct {
     kind: Obj_Kind,
     next: ?*Obj,
@@ -135,7 +139,22 @@ pub const Value = struct {
         };
     }
 
-    pub fn print(self: Self) void {
+    pub fn print(self: Self, writer: Writer) void {
+        // const writer = std.io.getStdOut().writer();
+
+        const maybe_err = switch (self.kind) {
+            .bool => |b| writer.print("{any}", .{b}),
+            .number => |num| writer.print("{d}", .{num}),
+            .nil => writer.print("nil", .{}),
+            .obj => |obj| switch (obj.kind) {
+                .string => writer.print("{s}", .{self.as_string_slice()}),
+            },
+        };
+
+        maybe_err catch {};
+    }
+
+    pub fn print_unbuff(self: Self) void {
         const writer = std.io.getStdOut().writer();
 
         const maybe_err = switch (self.kind) {
@@ -150,5 +169,3 @@ pub const Value = struct {
         maybe_err catch {};
     }
 };
-
-pub const Value_Array = std.ArrayList(Value);
