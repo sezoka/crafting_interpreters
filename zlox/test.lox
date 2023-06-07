@@ -1,4 +1,11 @@
 
-for (var i = 0; i < 1000000; i = i + 1) {
+
+
+
+
+for (var i = 123; i < 3; i = i + 1) {
     print i;
 }
+
+
+

@@ -14,15 +14,22 @@ pub const Interpret_Error = error{
     RuntimeError,
 };
 
-const stack_max = 256;
+const frames_max = 64;
+const stack_max = frames_max * 256;
 
 const Stack = std.BoundedArray(Value, stack_max);
 const Strings_Set = std.StringHashMap(void);
 const Globals_Map = std.StringHashMap(Value);
 
-pub const VM = struct {
-    chunk: Chunk,
+const Call_Frame = struct {
+    function: *value.Obj_Function,
     ip: [*]u8,
+    slots: [*]value.Value,
+};
+
+pub const VM = struct {
+    frames: [frames_max]Call_Frame,
+    frame_cnt: u8,
     stack: Stack,
     objects: ?*value.Obj,
     strings: Strings_Set,
@@ -34,8 +41,8 @@ pub const VM = struct {
 
     pub fn init(alloc: Allocator) Self {
         var vm = VM{
-            .chunk = undefined,
-            .ip = undefined,
+            .frames = undefined,
+            .frame_cnt = 0,
             .stack = Stack.init(0) catch unreachable,
             .objects = null,
             .strings = Strings_Set.init(alloc),
@@ -57,7 +64,7 @@ pub const VM = struct {
     }
 
     fn stack_reset(self: *Self) void {
-        self.stack.resize(0) catch unreachable;
+        self.frame_cnt = 0;
     }
 
     fn stack_push(self: *Self, val: Value) Interpret_Error!void {
@@ -83,6 +90,11 @@ pub const VM = struct {
 
     fn obj_free(self: *Self, obj: *value.Obj) void {
         switch (obj.kind) {
+            .function => {
+                var function = @ptrCast(*value.Obj_Function, @alignCast(@alignOf(*value.Obj_Function), obj));
+                self.alloc.destroy(function.chunk);
+                self.alloc.destroy(function);
+            },
             .string => {
                 const str = @ptrCast(*value.Obj_String, @alignCast(@alignOf(*value.Obj_String), obj));
                 self.alloc.destroy(str);
@@ -100,21 +112,24 @@ pub const VM = struct {
     }
 
     fn read_byte(self: *Self) u8 {
-        const val = self.ip[0];
-        self.ip += 1;
+        const frame = &self.frames[self.frame_cnt - 1];
+        const val = frame.ip[0];
+        frame.ip += 1;
         return val;
     }
 
     fn read_constant(self: *Self) Value {
+        const frame = &self.frames[self.frame_cnt - 1];
         const idx = self.read_byte();
-        return self.chunk.constants.items[idx];
+        return frame.function.chunk.constants.items[idx];
     }
 
     fn read_long_constant(self: *Self) Value {
         const idx_hi = @intCast(u16, self.read_byte());
         const idx_lo = @intCast(u16, self.read_byte());
         const idx = (idx_hi << 8) | idx_lo;
-        return self.chunk.constants.items[idx];
+        const frame = &self.frames[self.frame_cnt - 1];
+        return frame.function.chunk.constants.items[idx];
     }
 
     fn binary_op(self: *Self, comptime op: u8) Interpret_Error!void {
@@ -141,13 +156,16 @@ pub const VM = struct {
         var compiler = Parser.init(self);
         defer compiler.deinit();
 
-        const chunk = compiler.compile(source) catch return Interpret_Error.CompileError;
-        defer chunk.deinit();
+        const function = compiler.compile(source) catch return Interpret_Error.CompileError;
+        self.obj_push(@ptrCast(*value.Obj, function));
 
-        self.chunk = chunk;
-        self.ip = @ptrCast([*]u8, self.chunk.code.items.ptr);
+        var frame = &self.frames[self.frame_cnt];
+        self.frame_cnt += 1;
+        frame.function = function;
+        frame.ip = function.chunk.code.items.ptr;
+        frame.slots = @ptrCast([*]value.Value, &self.stack.buffer[0]);
 
-        try self.run();
+        return self.run();
     }
 
     fn runtime_error(self: *Self, comptime format: []const u8, args: anytype) void {
@@ -156,8 +174,10 @@ pub const VM = struct {
         _ = writer.print(format, args) catch {};
         _ = writer.write("\n") catch {};
 
-        const instruction = @ptrToInt(self.ip) - @ptrToInt(self.chunk.code.items.ptr - 1);
-        const line = self.chunk.lines.items[instruction];
+        const frame = &self.frames[self.frame_cnt - 1];
+        const instruction = @ptrToInt(frame.ip) - @ptrToInt(frame.function.chunk.code.items.ptr - 1);
+        const line = frame.function.chunk.lines.items[instruction];
+
         _ = writer.print("[line {d}] in script\n", .{line}) catch {};
         self.stack_reset();
     }
@@ -182,17 +202,15 @@ pub const VM = struct {
     }
 
     fn read_short(self: *Self) u16 {
-        self.ip += 2;
-        return (@intCast(u16, (self.ip - 2)[0]) << 8) | @intCast(u16, (self.ip - 1)[0]);
+        const frame = &self.frames[self.frame_cnt - 1];
+        frame.ip += 2;
+        return (@intCast(u16, (frame.ip - 2)[0]) << 8) | @intCast(u16, (frame.ip - 1)[0]);
     }
 
     fn run(self: *Self) Interpret_Error!void {
-        if (self.chunk.code.items.len == 0) return;
+        var frame = &self.frames[self.frame_cnt - 1];
 
-        const unbuff_writer = std.io.getStdOut().writer();
-        var buff = std.io.bufferedWriter(unbuff_writer);
-        const writer = buff.writer();
-        defer buff.flush() catch {};
+        const writer = std.io.getStdOut().writer();
 
         while (true) {
             if (builtin.mode == .Debug) {
@@ -200,12 +218,12 @@ pub const VM = struct {
                 var i: usize = 0;
                 while (i < self.stack.len) : (i += 1) {
                     std.debug.print("[ ", .{});
-                    self.stack.buffer[i].print_unbuff();
+                    self.stack.buffer[i].print();
                     std.debug.print(" ]", .{});
                 }
                 std.debug.print("\n", .{});
 
-                _ = debug.disassemble_instruction(self.chunk, @ptrToInt(self.ip) - @ptrToInt(&self.chunk.code.items[0])) catch return Interpret_Error.RuntimeError;
+                _ = debug.disassemble_instruction(frame.function.chunk, @ptrToInt(frame.ip) - @ptrToInt(frame.function.chunk.code.items.ptr)) catch return Interpret_Error.RuntimeError;
             }
             const instruction = self.read_byte();
             switch (instruction) {
@@ -228,20 +246,20 @@ pub const VM = struct {
                 },
                 Op_Code.op_print.byte() => {
                     const val = try self.stack_pop();
-                    val.print(writer);
+                    val.print();
                     writer.writeByte('\n') catch {};
                 },
                 Op_Code.op_jump.byte() => {
                     const offset = self.read_short();
-                    self.ip += offset;
+                    frame.ip += offset;
                 },
                 Op_Code.op_jump_if_false.byte() => {
                     const offset = self.read_short();
-                    if (self.peek(0).is_falsey()) self.ip += offset;
+                    if (self.peek(0).is_falsey()) frame.ip += offset;
                 },
                 Op_Code.op_loop.byte() => {
                     const offset = self.read_short();
-                    self.ip -= offset;
+                    frame.ip -= offset;
                 },
                 Op_Code.op_return.byte() => {
                     return;
@@ -252,7 +270,7 @@ pub const VM = struct {
                 Op_Code.op_pop.byte() => _ = try self.stack_pop(),
                 Op_Code.op_get_local.byte() => {
                     const slot = self.read_byte();
-                    try self.stack_push(self.stack.buffer[slot]);
+                    try self.stack_push(frame.slots[slot]);
                 },
                 Op_Code.op_get_global.byte() => {
                     const name = self.read_string();
@@ -270,7 +288,7 @@ pub const VM = struct {
                 },
                 Op_Code.op_set_local.byte() => {
                     const slot = self.read_byte();
-                    self.stack.buffer[slot] = self.peek(0).*;
+                    frame.slots[slot] = self.peek(0).*;
                 },
                 Op_Code.op_set_global.byte() => {
                     const name = self.read_string();

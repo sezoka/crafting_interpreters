@@ -3,7 +3,7 @@ const Chunk = @import("./chunk.zig").Chunk;
 const Op_Code = @import("./chunk.zig").Op_Code;
 const value = @import("./value.zig");
 
-pub fn disassemble_chunk(chunk: Chunk, name: []const u8) !void {
+pub fn disassemble_chunk(chunk: *Chunk, name: []const u8) !void {
     std.debug.print("== {s} ==\n", .{name});
 
     var offset: usize = 0;
@@ -12,7 +12,7 @@ pub fn disassemble_chunk(chunk: Chunk, name: []const u8) !void {
     }
 }
 
-pub fn disassemble_instruction(chunk: Chunk, offset: usize) !usize {
+pub fn disassemble_instruction(chunk: *Chunk, offset: usize) !usize {
     std.debug.print("{d:0<4} ", .{offset});
 
     if (0 < offset and chunk.lines.items[offset] == chunk.lines.items[offset - 1]) {
@@ -55,20 +55,20 @@ pub fn disassemble_instruction(chunk: Chunk, offset: usize) !usize {
     return offset + 1;
 }
 
-fn jump_instruction(name: []const u8, sign: isize, chunk: Chunk, offset: usize) usize {
+fn jump_instruction(name: []const u8, sign: isize, chunk: *Chunk, offset: usize) usize {
     var jump = @intCast(isize, chunk.code.items[offset + 1]) << 8;
     jump |= chunk.code.items[offset + 2];
     std.debug.print("{s:<16} {d:4} -> {d}\n", .{ name, offset, @intCast(isize, offset) + 3 + sign * jump });
     return offset + 3;
 }
 
-fn byte_instruction(name: []const u8, chunk: Chunk, offset: usize) usize {
+fn byte_instruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     const slot = chunk.code.items[offset + 1];
     std.debug.print("{s:<16} {d:4}\n", .{ name, slot });
     return offset + 2;
 }
 
-fn constant_long_instruction(name: []const u8, chunk: Chunk, offset: usize) usize {
+fn constant_long_instruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     const idx_hi = @intCast(u16, chunk.code.items[offset + 1]);
     const idx_lo = @intCast(u16, chunk.code.items[offset + 2]);
     const constant_idx = (idx_hi << 8) | idx_lo;
@@ -77,16 +77,16 @@ fn constant_long_instruction(name: []const u8, chunk: Chunk, offset: usize) usiz
     return offset + 3;
 }
 
-fn constant_instruction(name: []const u8, chunk: Chunk, offset: usize) usize {
+fn constant_instruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     const constant_idx = chunk.code.items[offset + 1];
     print_constant(name, chunk, constant_idx);
 
     return offset + 2;
 }
 
-fn print_constant(name: []const u8, chunk: Chunk, idx: usize) void {
+fn print_constant(name: []const u8, chunk: *Chunk, idx: usize) void {
     std.debug.print("{s:<16} {d:4} '", .{ name, idx });
-    value.Value.print_unbuff(chunk.constants.items[idx]);
+    value.Value.print(chunk.constants.items[idx]);
     std.debug.print("'\n", .{});
 }
 

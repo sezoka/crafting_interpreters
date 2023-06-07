@@ -1,9 +1,11 @@
+const chunk = @import("chunk.zig");
 const std = @import("std");
 const VM = @import("vm.zig").VM;
 
 const Number = f32;
 
 pub const Obj_Kind = enum {
+    function,
     string,
 };
 
@@ -19,6 +21,24 @@ pub const Obj = packed struct {
 
     pub fn init(kind: Obj_Kind) Self {
         return .{ .kind = kind, .next = null };
+    }
+};
+
+pub const Obj_Function = packed struct {
+    obj: Obj,
+    arity: u8,
+    chunk: *chunk.Chunk,
+    name: ?*Obj_String,
+
+    const Self = @This();
+
+    pub fn init(alloc: std.mem.Allocator) !*Self {
+        var function = try alloc.create(Self);
+        function.arity = 0;
+        function.name = null;
+        function.chunk = try alloc.create(chunk.Chunk);
+        function.chunk.* = chunk.Chunk.init(alloc);
+        return function;
     }
 };
 
@@ -52,6 +72,10 @@ pub const Obj_String = packed struct {
         obj_ptr.* = .{ .obj = Obj.init(.string), .chars = interned_slice.ptr, .len = interned_slice.len };
 
         return obj_ptr;
+    }
+
+    pub fn as_slice(self: Self) []const u8 {
+        return self.chars[0..self.len];
     }
 };
 
@@ -107,6 +131,10 @@ pub const Value = struct {
         return self.is_obj_kind(.string);
     }
 
+    pub fn is_function(self: Self) bool {
+        return self.is_obj_kind(.function);
+    }
+
     pub fn is_falsey(self: Self) bool {
         return self.is_nil() or (self.is_bool() and !self.kind.bool);
     }
@@ -117,6 +145,10 @@ pub const Value = struct {
 
     pub fn as_string(self: Self) *Obj_String {
         return @ptrCast(*Obj_String, @alignCast(@alignOf(*Obj_String), self.kind.obj));
+    }
+
+    pub fn as_function(self: Self) *Obj_Function {
+        return @ptrCast(*Obj_Function, @alignCast(@alignOf(*Obj_Function), self.kind.obj));
     }
 
     pub fn as_string_slice(self: Self) []const u8 {
@@ -139,22 +171,7 @@ pub const Value = struct {
         };
     }
 
-    pub fn print(self: Self, writer: Writer) void {
-        // const writer = std.io.getStdOut().writer();
-
-        const maybe_err = switch (self.kind) {
-            .bool => |b| writer.print("{any}", .{b}),
-            .number => |num| writer.print("{d}", .{num}),
-            .nil => writer.print("nil", .{}),
-            .obj => |obj| switch (obj.kind) {
-                .string => writer.print("{s}", .{self.as_string_slice()}),
-            },
-        };
-
-        maybe_err catch {};
-    }
-
-    pub fn print_unbuff(self: Self) void {
+    pub fn print(self: Self) void {
         const writer = std.io.getStdOut().writer();
 
         const maybe_err = switch (self.kind) {
@@ -163,6 +180,12 @@ pub const Value = struct {
             .nil => writer.print("nil", .{}),
             .obj => |obj| switch (obj.kind) {
                 .string => writer.print("{s}", .{self.as_string_slice()}),
+                .function => blk: {
+                    if (self.as_function().name == null) {
+                        break :blk writer.print("<script>", .{});
+                    }
+                    break :blk writer.print("<fn {s}>", .{self.as_function().name.?.as_slice()});
+                },
             },
         };
 
