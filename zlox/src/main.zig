@@ -11,29 +11,44 @@ pub fn main() !void {
     var m = vm.init(alloc);
     defer vm.deinit(&m);
 
-    var c = chunk.init(alloc);
-    defer chunk.deinit(&c);
+    const args = try std.process.argsAlloc(alloc);
+    defer std.process.argsFree(alloc, args);
 
-    var constant = try chunk.add_constant(&c, 1.2);
-    try chunk.append_byte_code(&c, .Constant, 123);
-    try chunk.append_byte(&c, constant, 123);
+    if (args.len == 1) {
+        try repl(&m);
+    } else if (args.len == 2) {
+        try run_file(&m, args[1]);
+    } else {
+        std.log.info("Usage: clox [path]\n", .{});
+        return;
+    }
+}
 
-    constant = try chunk.add_constant(&c, 3.4);
-    try chunk.append_byte_code(&c, .Constant, 123);
-    try chunk.append_byte(&c, constant, 123);
+fn repl(m: *vm.VM) !void {
+    var line = std.ArrayList(u8).init(m.alloc);
+    defer line.deinit();
 
-    try chunk.append_byte_code(&c, .Add, 123);
+    const stdout = std.io.getStdOut().writer();
+    const stdin = std.io.getStdIn().reader();
 
-    constant = try chunk.add_constant(&c, 5.6);
-    try chunk.append_byte_code(&c, .Constant, 123);
-    try chunk.append_byte(&c, constant, 123);
+    while (true) {
+        try stdout.writeAll("> ");
+        try stdin.readUntilDelimiterArrayList(&line, '\n', 1024);
+        // vm.interpret(m, line.items) catch {};
+        line.clearRetainingCapacity();
+    }
+}
 
-    try chunk.append_byte_code(&c, .Divide, 123);
-    try chunk.append_byte_code(&c, .Negate, 123);
+fn run_file(m: *vm.VM, path: []const u8) !void {
+    const source = std.fs.cwd().readFileAlloc(m.alloc, path, 10240) catch |err| {
+        switch (err) {
+            error.FileTooBig => std.log.err("Not enough memory to read \"{s}\"", .{path}),
+            else => std.log.err("Could not open file \"{s}\"", .{path}),
+        }
+        return;
+    };
+    defer m.alloc.free(source);
 
-    try chunk.append_byte_code(&c, .Return, 123);
-
-    debug.disassemble_chunk(c, "test chunk");
-
-    try vm.interpret(&m, c);
+    std.debug.print("{any}", .{source[source.len - 10 .. source.len]});
+    try vm.interpret(m, source);
 }

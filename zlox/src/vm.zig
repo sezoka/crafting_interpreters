@@ -3,10 +3,11 @@ const builtin = @import("builtin");
 const chunk = @import("chunk.zig");
 const value = @import("value.zig");
 const debug = @import("debug.zig");
+const compiler = @import("compiler.zig");
 
 const stack_max = 256;
 
-const VM = struct {
+pub const VM = struct {
     chunk: chunk.Chunk,
     ip: [*]u8,
     stack: [stack_max]value.Value,
@@ -14,7 +15,7 @@ const VM = struct {
     alloc: std.mem.Allocator,
 };
 
-const Interpret_Error = error{
+pub const Interpret_Error = error{
     Ok,
     Compile_Error,
     Runtime_Error,
@@ -34,12 +35,13 @@ pub fn deinit(m: *VM) void {
     _ = m;
 }
 
-pub fn interpret(m: *VM, c: chunk.Chunk) Interpret_Error!void {
-    m.chunk = c;
-    m.ip = @ptrCast([*]u8, m.chunk.code.items.ptr);
-    reset_stack(m);
-
-    return run(m);
+pub fn interpret(m: *VM, source: []const u8) Interpret_Error!void {
+    try compiler.compile(m.alloc, source);
+    // m.chunk = c;
+    // m.ip = @ptrCast([*]u8, m.chunk.code.items.ptr);
+    // reset_stack(m);
+    // return run(m);
+    return;
 }
 
 fn reset_stack(m: *VM) void {
