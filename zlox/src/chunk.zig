@@ -4,6 +4,11 @@ const value = @import("value.zig");
 pub const Op_Code = enum {
     Return,
     Constant,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
 };
 
 pub const Byte_Array = std.ArrayList(u8);

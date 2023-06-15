@@ -26,11 +26,16 @@ pub fn disassemble_instruction(c: chunk.Chunk, offset: usize) usize {
     return switch (@intToEnum(chunk.Op_Code, instruction)) {
         .Return => simple_instruction("Return", offset),
         .Constant => constant_instruction("Constant", c, offset),
+        .Add => simple_instruction("Add", offset),
+        .Subtract => simple_instruction("Subtract", offset),
+        .Multiply => simple_instruction("Multiply", offset),
+        .Divide => simple_instruction("Divide", offset),
+        .Negate => simple_instruction("Negate", offset),
     };
 }
 
 fn simple_instruction(name: []const u8, offset: usize) usize {
-    std.debug.print("{s}\n ", .{name});
+    std.debug.print("{s}\n", .{name});
     return offset + 1;
 }
 
