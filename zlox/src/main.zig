@@ -33,7 +33,9 @@ fn repl(m: *vm.VM) !void {
 
     while (true) {
         try stdout.writeAll("> ");
-        try stdin.readUntilDelimiterArrayList(&line, '\n', 1024);
+        stdin.readUntilDelimiterArrayList(&line, '\n', 1024) catch |err| {
+            if (err == error.EndOfStream) break;
+        };
         // vm.interpret(m, line.items) catch {};
         line.clearRetainingCapacity();
     }

@@ -1,13 +1,12 @@
 const std = @import("std");
 
-const Scanner = struct {
+pub const Scanner = struct {
     start: [*]const u8,
     current: [*]const u8,
     last: usize,
     line: u32,
 };
-
-const Token = struct {
+pub const Token = struct {
     kind: Token_Kind,
     literal: []const u8,
     line: u32,
@@ -23,7 +22,7 @@ pub fn init_scanner(source: []const u8) Scanner {
     };
 }
 
-pub fn scan_token(s: *Scanner) !Token {
+pub fn scan_token(s: *Scanner) Token {
     skip_whitespace(s);
 
     s.start = s.current;
@@ -214,7 +213,7 @@ fn get_literal_length(s: *Scanner) usize {
     return @ptrToInt(s.current) - @ptrToInt(s.start);
 }
 
-const Token_Kind = enum {
+pub const Token_Kind = enum {
     // Single-character tokens.
     Left_Paren,
     Right_Paren,

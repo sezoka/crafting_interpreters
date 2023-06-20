@@ -36,12 +36,16 @@ pub fn deinit(m: *VM) void {
 }
 
 pub fn interpret(m: *VM, source: []const u8) Interpret_Error!void {
-    try compiler.compile(m.alloc, source);
-    // m.chunk = c;
-    // m.ip = @ptrCast([*]u8, m.chunk.code.items.ptr);
-    // reset_stack(m);
-    // return run(m);
-    return;
+    var c = compiler.compile(m.alloc, source) catch {
+        return error.Compile_Error;
+    };
+    defer chunk.deinit(&c);
+
+    m.chunk = c;
+    m.ip = @ptrCast([*]u8, m.chunk.code.items.ptr);
+    reset_stack(m);
+
+    return run(m);
 }
 
 fn reset_stack(m: *VM) void {
