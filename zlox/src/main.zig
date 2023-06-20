@@ -36,7 +36,8 @@ fn repl(m: *vm.VM) !void {
         stdin.readUntilDelimiterArrayList(&line, '\n', 1024) catch |err| {
             if (err == error.EndOfStream) break;
         };
-        // vm.interpret(m, line.items) catch {};
+        if (line.items.len == 0) continue;
+        vm.interpret(m, line.items) catch {};
         line.clearRetainingCapacity();
     }
 }

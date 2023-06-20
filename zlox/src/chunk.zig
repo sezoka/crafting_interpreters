@@ -21,7 +21,7 @@ pub const Chunk = struct {
     lines: Line_Array,
 };
 
-pub fn init(alloc: std.mem.Allocator) Chunk {
+pub fn init_chunk(alloc: std.mem.Allocator) Chunk {
     return .{
         .code = Byte_Array.init(alloc),
         .constants = value.Value_Array.init(alloc),
@@ -29,7 +29,7 @@ pub fn init(alloc: std.mem.Allocator) Chunk {
     };
 }
 
-pub fn deinit(c: *const Chunk) void {
+pub fn deinit_chunk(c: *const Chunk) void {
     c.code.deinit();
     c.constants.deinit();
     c.lines.deinit();
@@ -48,7 +48,7 @@ pub fn append_constant(c: *Chunk, v: value.Value) !void {
     try c.constants.append(v);
 }
 
-pub fn add_constant(c: *Chunk, v: value.Value) !u8 {
+pub fn add_constant(c: *Chunk, v: value.Value) !usize {
     try append_constant(c, v);
-    return @intCast(u8, c.constants.items.len - 1);
+    return c.constants.items.len - 1;
 }

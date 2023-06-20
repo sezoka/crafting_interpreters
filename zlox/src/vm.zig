@@ -39,7 +39,9 @@ pub fn interpret(m: *VM, source: []const u8) Interpret_Error!void {
     var c = compiler.compile(m.alloc, source) catch {
         return error.Compile_Error;
     };
-    defer chunk.deinit(&c);
+    defer chunk.deinit_chunk(&c);
+
+    std.debug.print("HERE\n", .{});
 
     m.chunk = c;
     m.ip = @ptrCast([*]u8, m.chunk.code.items.ptr);
