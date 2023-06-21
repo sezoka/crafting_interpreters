@@ -38,7 +38,7 @@ fn repl(m: *vm.VM) !void {
         };
         if (line.items.len == 0) continue;
         vm.interpret(m, line.items) catch {};
-        line.clearRetainingCapacity();
+        line.clearAndFree();
     }
 }
 

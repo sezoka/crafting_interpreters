@@ -83,6 +83,7 @@ fn unary(p: *Parser) !void {
     try parse_precedence(p, .Unary);
 
     switch (operator_kind) {
+        .Bang => try emit_byte(p, @enumToInt(chunk.Op_Code.Not)),
         .Minus => try emit_byte(p, @enumToInt(chunk.Op_Code.Negate)),
         else => return,
     }
@@ -94,6 +95,12 @@ fn binary(p: *Parser) !void {
     try parse_precedence(p, @intToEnum(Precedence, @enumToInt(rule.precedence) + 1));
 
     switch (operator_kind) {
+        .Bang_Equal => try emit_bytes(p, @enumToInt(chunk.Op_Code.Equal), @enumToInt(chunk.Op_Code.Not)),
+        .Equal_Equal => try emit_byte(p, @enumToInt(chunk.Op_Code.Equal)),
+        .Greater => try emit_byte(p, @enumToInt(chunk.Op_Code.Greater)),
+        .Greater_Equal => try emit_bytes(p, @enumToInt(chunk.Op_Code.Less), @enumToInt(chunk.Op_Code.Not)),
+        .Less => try emit_byte(p, @enumToInt(chunk.Op_Code.Less)),
+        .Less_Equal => try emit_bytes(p, @enumToInt(chunk.Op_Code.Greater), @enumToInt(chunk.Op_Code.Not)),
         .Plus => try emit_byte(p, @enumToInt(chunk.Op_Code.Add)),
         .Minus => try emit_byte(p, @enumToInt(chunk.Op_Code.Subtract)),
         .Star => try emit_byte(p, @enumToInt(chunk.Op_Code.Multiply)),
@@ -120,8 +127,8 @@ fn parse_precedence(p: *Parser, precedence: Precedence) !void {
 }
 
 fn number(p: *Parser) Parse_Fn_Error!void {
-    var val = std.fmt.parseFloat(f64, p.previous.literal) catch unreachable;
-    try emit_constant(p, val);
+    var val = std.fmt.parseFloat(f32, p.previous.literal) catch unreachable;
+    try emit_constant(p, value.init_number(val));
 }
 
 fn emit_constant(p: *Parser, val: value.Value) !void {
@@ -213,6 +220,15 @@ fn error_at(p: *Parser, token: scanner.Token, message: []const u8) void {
     p.had_error = true;
 }
 
+fn literal(p: *Parser) Parse_Fn_Error!void {
+    switch (p.previous.kind) {
+        .True => try emit_byte(p, @enumToInt(chunk.Op_Code.True)),
+        .False => try emit_byte(p, @enumToInt(chunk.Op_Code.False)),
+        .Nil => try emit_byte(p, @enumToInt(chunk.Op_Code.Nil)),
+        else => return,
+    }
+}
+
 fn get_rule(kind: scanner.Token_Kind) *const Parse_Rule {
     return &@as(Parse_Rule, switch (kind) {
         .Left_Paren => .{ .prefix = grouping },
@@ -226,31 +242,31 @@ fn get_rule(kind: scanner.Token_Kind) *const Parse_Rule {
         .Semicolon => .{},
         .Slash => .{ .infix = binary, .precedence = .Factor },
         .Star => .{ .infix = binary, .precedence = .Factor },
-        .Bang => .{},
-        .Bang_Equal => .{},
+        .Bang => .{ .prefix = unary },
+        .Bang_Equal => .{ .infix = binary, .precedence = .Equality },
         .Equal => .{},
-        .Equal_Equal => .{},
-        .Greater => .{},
-        .Greater_Equal => .{},
-        .Less => .{},
-        .Less_Equal => .{},
+        .Equal_Equal => .{ .infix = binary, .precedence = .Equality },
+        .Greater => .{ .infix = binary, .precedence = .Comparison },
+        .Greater_Equal => .{ .infix = binary, .precedence = .Comparison },
+        .Less => .{ .infix = binary, .precedence = .Comparison },
+        .Less_Equal => .{ .infix = binary, .precedence = .Comparison },
         .Identifier => .{},
         .String => .{},
         .Number => .{ .prefix = number },
         .And => .{},
         .Class => .{},
         .Else => .{},
-        .False => .{},
+        .False => .{ .prefix = literal },
         .For => .{},
         .Fun => .{},
         .If => .{},
-        .Nil => .{},
+        .Nil => .{ .prefix = literal },
         .Or => .{},
         .Print => .{},
         .Return => .{},
         .Super => .{},
         .This => .{},
-        .True => .{},
+        .True => .{ .prefix = literal },
         .Var => .{},
         .While => .{},
         .Error => .{},

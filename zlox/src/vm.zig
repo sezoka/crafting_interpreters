@@ -41,8 +41,6 @@ pub fn interpret(m: *VM, source: []const u8) Interpret_Error!void {
     };
     defer chunk.deinit_chunk(&c);
 
-    std.debug.print("HERE\n", .{});
-
     m.chunk = c;
     m.ip = @ptrCast([*]u8, m.chunk.code.items.ptr);
     reset_stack(m);
@@ -62,7 +60,7 @@ fn run(m: *VM) Interpret_Error!void {
             var slot = @ptrCast([*]value.Value, &m.stack[0]);
             while (slot != m.stack_top) : (slot += 1) {
                 std.debug.print("[ ", .{});
-                value.print(slot[0]) catch {};
+                value.print_value(slot[0]) catch {};
                 std.debug.print(" ]", .{});
             }
             std.debug.print("\n", .{});
@@ -74,7 +72,7 @@ fn run(m: *VM) Interpret_Error!void {
         var instruction = read_byte_code(m);
         switch (instruction) {
             .Return => {
-                value.print(stack_pop(m)) catch {};
+                value.print_value(stack_pop(m)) catch {};
                 std.debug.print("\n", .{});
                 return;
             },
@@ -82,38 +80,88 @@ fn run(m: *VM) Interpret_Error!void {
                 const constant = read_constant(m);
                 stack_push(m, constant);
             },
+            .Nil => {
+                stack_push(m, value.init_nil());
+            },
+            .True => {
+                stack_push(m, value.init_bool(true));
+            },
+            .False => {
+                stack_push(m, value.init_bool(false));
+            },
+            .Equal => {
+                const b = stack_pop(m);
+                const a = stack_pop(m);
+                stack_push(m, value.init_bool(value.values_equal(a, b)));
+            },
+            .Greater => {
+                try binary_op(m, '>');
+            },
+            .Less => {
+                try binary_op(m, '<');
+            },
             .Add => {
-                binary_op(m, '+');
+                try binary_op(m, '+');
             },
             .Subtract => {
-                binary_op(m, '-');
+                try binary_op(m, '-');
             },
             .Multiply => {
-                binary_op(m, '*');
+                try binary_op(m, '*');
             },
             .Divide => {
-                binary_op(m, '/');
+                try binary_op(m, '/');
+            },
+            .Not => {
+                stack_push(m, value.init_bool(is_falsey(stack_pop(m))));
             },
             .Negate => {
-                stack_push(m, (-stack_pop(m)));
+                if (!value.is_number(peek(m, 0))) {
+                    // runtime_error(m, "Operand must be a number.", .{});
+                    return Interpret_Error.Runtime_Error;
+                }
+
+                stack_push(m, value.init_number(-value.as_number(stack_pop(m))));
             },
         }
     }
 }
 
-fn binary_op(m: *VM, comptime op: u8) void {
-    const b = stack_pop(m);
-    const a = stack_pop(m);
+fn is_falsey(v: value.Value) bool {
+    return value.is_nil(v) or (value.is_bool(v) and !value.as_bool(v));
+}
 
+fn binary_op(m: *VM, comptime op: u8) !void {
+    if (!value.is_number(peek(m, 0)) or !value.is_number(peek(m, 1))) {
+        // runtime_error(m, "Operands must be numbers.", .{});
+        return Interpret_Error.Runtime_Error;
+    }
+
+    const b = value.as_number(stack_pop(m));
+    const a = value.as_number(stack_pop(m));
     const result = switch (op) {
-        '+' => a + b,
-        '-' => a - b,
-        '*' => a * b,
-        '/' => a / b,
+        '+' => value.init_number(a + b),
+        '-' => value.init_number(a - b),
+        '*' => value.init_number(a * b),
+        '/' => value.init_number(a / b),
+        '<' => value.init_bool(a < b),
+        '>' => value.init_bool(a > b),
         else => @compileError("invalid binary operator"),
     };
-
     stack_push(m, result);
+}
+
+fn peek(m: *VM, distance: usize) value.Value {
+    return (m.stack_top - 1 - distance)[0];
+}
+
+fn runtime_error(m: *VM, comptime format: []const u8, args: anytype) void {
+    const stderr = std.io.getStdErr().writer();
+    stderr.print(format ++ "\n", args) catch {};
+    const instruction = @ptrToInt(m.ip) - @ptrToInt(m.chunk.code.items.ptr) - 1;
+    const line = m.chunk.lines.items[instruction];
+    stderr.print("[line {d}] in script\n", .{line}) catch {};
+    reset_stack(m);
 }
 
 fn read_byte(m: *VM) u8 {
