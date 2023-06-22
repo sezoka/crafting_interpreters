@@ -1,9 +1,11 @@
 const std = @import("std");
+const vm = @import("vm.zig");
 
 pub const Value_Kind = enum {
     Bool,
     Nil,
     Number,
+    Obj,
 };
 
 pub const Value = struct {
@@ -11,7 +13,22 @@ pub const Value = struct {
     as: union {
         boolean: bool,
         number: f64,
+        obj: *Obj,
     },
+};
+
+pub const Obj_Kind = enum {
+    String,
+};
+
+pub const Obj = struct {
+    kind: Obj_Kind,
+    next: ?*Obj,
+};
+
+pub const Obj_String = struct {
+    obj: Obj,
+    chars: []const u8,
 };
 
 pub const Value_Array = std.ArrayList(Value);
@@ -28,12 +45,27 @@ pub fn init_number(value: f64) Value {
     return .{ .kind = .Number, .as = .{ .number = value } };
 }
 
+pub fn init_obj(value: *Obj) Value {
+    return .{ .kind = .Obj, .as = .{ .obj = value } };
+}
+
 pub fn as_bool(value: Value) bool {
     return value.as.boolean;
 }
 
 pub fn as_number(value: Value) f64 {
     return value.as.number;
+}
+pub fn as_obj(value: Value) *Obj {
+    return value.as.obj;
+}
+
+pub fn as_string(value: Value) *Obj_String {
+    return @fieldParentPtr(Obj_String, "obj", as_obj(value));
+}
+
+pub fn as_string_chars(value: Value) []const u8 {
+    return @fieldParentPtr(Obj_String, "obj", as_obj(value)).chars;
 }
 
 pub fn is_bool(value: Value) bool {
@@ -48,6 +80,42 @@ pub fn is_number(value: Value) bool {
     return value.kind == .Number;
 }
 
+pub fn is_obj(value: Value) bool {
+    return value.kind == .Obj;
+}
+
+pub fn is_string(value: Value) bool {
+    return is_obj_kind(value, .String);
+}
+
+pub fn is_obj_kind(value: Value, kind: Obj_Kind) bool {
+    return is_obj(value) and as_obj(value).kind == kind;
+}
+
+pub fn obj_kind(value: Value) Obj_Kind {
+    return value.as.obj.kind;
+}
+
+pub fn copy_string(m: *vm.VM, str: []const u8) !*Obj_String {
+    const chars = try m.alloc.alloc(u8, str.len);
+    errdefer m.alloc.free(chars);
+    @memcpy(chars, str);
+    return allocate_string(m, chars);
+}
+
+fn allocate_string(m: *vm.VM, chars: []const u8) !*Obj_String {
+    var string = try m.alloc.create(Obj_String);
+    string.obj.next = m.objects;
+    m.objects = &string.obj;
+    string.obj.kind = .String;
+    string.chars = chars;
+    return string;
+}
+
+pub fn take_string(m: *vm.VM, chars: []const u8) !*Obj_String {
+    return allocate_string(m, chars);
+}
+
 pub fn print_value(value: Value) !void {
     const writer = std.io.getStdOut().writer();
     try print_value_with_writer(writer, value);
@@ -58,6 +126,15 @@ pub fn print_value_with_writer(w: anytype, value: Value) !void {
         .Number => try w.print("{d}", .{as_number(value)}),
         .Bool => try w.print("{}", .{as_bool(value)}),
         .Nil => try w.print("nil", .{}),
+        .Obj => try print_object(w, value),
+    }
+}
+
+fn print_object(w: anytype, value: Value) !void {
+    switch (obj_kind(value)) {
+        .String => {
+            try w.writeAll(as_string_chars(value));
+        },
     }
 }
 
@@ -68,6 +145,10 @@ pub fn values_equal(a: Value, b: Value) bool {
         .Bool => as_bool(a) == as_bool(b),
         .Nil => true,
         .Number => as_number(a) == as_number(b),
-        // else => return false,
+        .Obj => {
+            const a_str = as_string_chars(a);
+            const b_str = as_string_chars(b);
+            return std.mem.eql(u8, a_str, b_str);
+        },
     };
 }

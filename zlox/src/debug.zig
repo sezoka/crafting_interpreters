@@ -49,8 +49,8 @@ fn simple_instruction(name: []const u8, offset: usize) usize {
 fn constant_instruction(name: []const u8, c: chunk.Chunk, offset: usize) usize {
     const constant_idx = c.code.items[offset + 1];
     const constant = c.constants.items[constant_idx];
-    std.debug.print("{s: <16} {d:4} '", .{ name, value.as_number(constant) });
+    std.debug.print("{s: <16} '", .{name});
     value.print_value(constant) catch {};
-    std.debug.print("\n", .{});
+    std.debug.print("'\n", .{});
     return offset + 2;
 }

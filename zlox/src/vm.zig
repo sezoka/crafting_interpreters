@@ -12,6 +12,7 @@ pub const VM = struct {
     ip: [*]u8,
     stack: [stack_max]value.Value,
     stack_top: [*]value.Value,
+    objects: ?*value.Obj,
     alloc: std.mem.Allocator,
 };
 
@@ -27,16 +28,36 @@ pub fn init(alloc: std.mem.Allocator) VM {
         .ip = undefined,
         .stack = undefined,
         .stack_top = undefined,
+        .objects = null,
         .alloc = alloc,
     };
 }
 
 pub fn deinit(m: *VM) void {
-    _ = m;
+    deinit_objects(m);
+}
+
+fn deinit_objects(m: *VM) void {
+    var object = m.objects;
+    while (object != null) {
+        const next = object.?.next;
+        deinit_object(m, object.?);
+        object = next;
+    }
+}
+
+fn deinit_object(m: *VM, obj: *value.Obj) void {
+    switch (obj.kind) {
+        .String => {
+            const string = @fieldParentPtr(value.Obj_String, "obj", obj);
+            m.alloc.free(string.chars);
+            m.alloc.destroy(string);
+        },
+    }
 }
 
 pub fn interpret(m: *VM, source: []const u8) Interpret_Error!void {
-    var c = compiler.compile(m.alloc, source) catch {
+    var c = compiler.compile(m, source) catch {
         return error.Compile_Error;
     };
     defer chunk.deinit_chunk(&c);
@@ -101,7 +122,16 @@ fn run(m: *VM) Interpret_Error!void {
                 try binary_op(m, '<');
             },
             .Add => {
-                try binary_op(m, '+');
+                if (value.is_string(peek(m, 0)) and value.is_string(peek(m, 1))) {
+                    concatenate(m) catch return Interpret_Error.Runtime_Error;
+                } else if (value.is_number(peek(m, 0)) and value.is_number(peek(m, 1))) {
+                    const b = value.as_number(stack_pop(m));
+                    const a = value.as_number(stack_pop(m));
+                    stack_push(m, value.init_number(a + b));
+                } else {
+                    runtime_error(m, "Operands must be two numbers or two strings.", .{});
+                    return Interpret_Error.Runtime_Error;
+                }
             },
             .Subtract => {
                 try binary_op(m, '-');
@@ -125,6 +155,19 @@ fn run(m: *VM) Interpret_Error!void {
             },
         }
     }
+}
+
+fn concatenate(m: *VM) !void {
+    const b = value.as_string(stack_pop(m));
+    const a = value.as_string(stack_pop(m));
+
+    const length = a.chars.len + b.chars.len;
+    const chars = try m.alloc.alloc(u8, length);
+    @memcpy(chars[0..a.chars.len], a.chars);
+    @memcpy(chars[a.chars.len..length], b.chars);
+
+    const result = try value.take_string(m, chars);
+    stack_push(m, value.init_obj(&result.obj));
 }
 
 fn is_falsey(v: value.Value) bool {

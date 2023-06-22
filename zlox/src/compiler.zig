@@ -4,6 +4,7 @@ const debug = @import("debug.zig");
 const chunk = @import("chunk.zig");
 const scanner = @import("scanner.zig");
 const value = @import("value.zig");
+const vm = @import("vm.zig");
 
 const Parser = struct {
     current: scanner.Token,
@@ -12,6 +13,7 @@ const Parser = struct {
     had_error: bool,
     scanner: *scanner.Scanner,
     compiling_chunk: *chunk.Chunk,
+    vm: *vm.VM,
 };
 
 const Precedence = enum {
@@ -38,7 +40,7 @@ const Parse_Fn_Error = error{ OutOfMemory, TooManyConstants };
 
 const Parse_Fn = fn (p: *Parser) Parse_Fn_Error!void;
 
-fn init_parser(s: *scanner.Scanner, ch: *chunk.Chunk) Parser {
+fn init_parser(m: *vm.VM, s: *scanner.Scanner, ch: *chunk.Chunk) Parser {
     return .{
         .current = undefined,
         .previous = undefined,
@@ -46,15 +48,16 @@ fn init_parser(s: *scanner.Scanner, ch: *chunk.Chunk) Parser {
         .panic_mode = false,
         .scanner = s,
         .compiling_chunk = ch,
+        .vm = m,
     };
 }
 
-pub fn compile(alloc: std.mem.Allocator, source: []const u8) !chunk.Chunk {
-    var ch = chunk.init_chunk(alloc);
+pub fn compile(m: *vm.VM, source: []const u8) !chunk.Chunk {
+    var ch = chunk.init_chunk(m.alloc);
     errdefer chunk.deinit_chunk(&ch);
 
     var s = scanner.init_scanner(source);
-    var parser = init_parser(&s, &ch);
+    var parser = init_parser(m, &s, &ch);
     advance(&parser);
     try expression(&parser);
     consume(&parser, .Eof, "Expect end of expression");
@@ -70,6 +73,12 @@ pub fn compile(alloc: std.mem.Allocator, source: []const u8) !chunk.Chunk {
 
 fn expression(p: *Parser) !void {
     try parse_precedence(p, .Assignment);
+}
+
+fn string(p: *Parser) !void {
+    const copied_string = try value.copy_string(p.vm, p.previous.literal[1 .. p.previous.literal.len - 1]);
+    const string_obj = value.init_obj(&copied_string.obj);
+    try emit_constant(p, string_obj);
 }
 
 fn grouping(p: *Parser) Parse_Fn_Error!void {
@@ -251,7 +260,7 @@ fn get_rule(kind: scanner.Token_Kind) *const Parse_Rule {
         .Less => .{ .infix = binary, .precedence = .Comparison },
         .Less_Equal => .{ .infix = binary, .precedence = .Comparison },
         .Identifier => .{},
-        .String => .{},
+        .String => .{ .prefix = string },
         .Number => .{ .prefix = number },
         .And => .{},
         .Class => .{},
