@@ -29,6 +29,10 @@ pub fn disassemble_instruction(c: chunk.Chunk, offset: usize) usize {
         .Nil => simple_instruction("Nil", offset),
         .True => simple_instruction("True", offset),
         .False => simple_instruction("False", offset),
+        .Pop => simple_instruction("Pop", offset),
+        .Get_Global => constant_instruction("Get_Global", c, offset),
+        .Define_Global => constant_instruction("Define_Global", c, offset),
+        .Set_Global => constant_instruction("Set_Global", c, offset),
         .Equal => simple_instruction("Equal", offset),
         .Greater => simple_instruction("Greater", offset),
         .Less => simple_instruction("Less", offset),
@@ -37,6 +41,7 @@ pub fn disassemble_instruction(c: chunk.Chunk, offset: usize) usize {
         .Multiply => simple_instruction("Multiply", offset),
         .Divide => simple_instruction("Divide", offset),
         .Not => simple_instruction("Not", offset),
+        .Print => simple_instruction("Print", offset),
         .Negate => simple_instruction("Negate", offset),
     };
 }

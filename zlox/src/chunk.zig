@@ -7,6 +7,10 @@ pub const Op_Code = enum {
     Nil,
     True,
     False,
+    Pop,
+    Get_Global,
+    Define_Global,
+    Set_Global,
     Equal,
     Greater,
     Less,
@@ -15,6 +19,7 @@ pub const Op_Code = enum {
     Multiply,
     Divide,
     Not,
+    Print,
     Negate,
 };
 

@@ -8,6 +8,7 @@ const compiler = @import("compiler.zig");
 const stack_max = 256;
 
 const String_Table = std.StringHashMap(*value.Obj_String);
+const Globals_Table = std.AutoHashMap(*value.Obj_String, value.Value);
 
 pub const VM = struct {
     chunk: chunk.Chunk,
@@ -16,11 +17,11 @@ pub const VM = struct {
     stack_top: [*]value.Value,
     objects: ?*value.Obj,
     strings: String_Table,
+    globals: Globals_Table,
     alloc: std.mem.Allocator,
 };
 
 pub const Interpret_Error = error{
-    Ok,
     Compile_Error,
     Runtime_Error,
 };
@@ -33,6 +34,7 @@ pub fn init_vm(alloc: std.mem.Allocator) VM {
         .stack_top = undefined,
         .objects = null,
         .strings = String_Table.init(alloc),
+        .globals = Globals_Table.init(alloc),
         .alloc = alloc,
     };
 }
@@ -40,6 +42,7 @@ pub fn init_vm(alloc: std.mem.Allocator) VM {
 pub fn deinit(m: *VM) void {
     deinit_objects(m);
     m.strings.deinit();
+    m.globals.deinit();
 }
 
 fn deinit_objects(m: *VM) void {
@@ -79,6 +82,8 @@ fn reset_stack(m: *VM) void {
 }
 
 fn run(m: *VM) Interpret_Error!void {
+    const writer = std.io.getStdOut().writer();
+
     while (true) {
         if (builtin.mode == .Debug) {
             std.debug.print("          ", .{});
@@ -98,8 +103,6 @@ fn run(m: *VM) Interpret_Error!void {
         var instruction = read_byte_code(m);
         switch (instruction) {
             .Return => {
-                value.print_value(stack_pop(m)) catch {};
-                std.debug.print("\n", .{});
                 return;
             },
             .Constant => {
@@ -114,6 +117,31 @@ fn run(m: *VM) Interpret_Error!void {
             },
             .False => {
                 stack_push(m, value.init_bool(false));
+            },
+            .Pop => {
+                _ = stack_pop(m);
+            },
+            .Get_Global => {
+                const name = read_string(m);
+                const val = m.globals.get(name) orelse {
+                    runtime_error(m, "Undefined variable '{s}'.", .{name.chars});
+                    return Interpret_Error.Runtime_Error;
+                };
+                stack_push(m, val);
+            },
+            .Define_Global => {
+                const name = read_string(m);
+                m.globals.put(name, peek(m, 0)) catch return Interpret_Error.Runtime_Error;
+                _ = stack_pop(m);
+            },
+            .Set_Global => {
+                const name = read_string(m);
+                if (m.globals.contains(name)) {
+                    m.globals.put(name, peek(m, 0)) catch return Interpret_Error.Runtime_Error;
+                } else {
+                    runtime_error(m, "Undefined variable '{s}'.", .{name.chars});
+                    return Interpret_Error.Runtime_Error;
+                }
             },
             .Equal => {
                 const b = stack_pop(m);
@@ -158,8 +186,17 @@ fn run(m: *VM) Interpret_Error!void {
 
                 stack_push(m, value.init_number(-value.as_number(stack_pop(m))));
             },
+            .Print => {
+                value.print_value_with_writer(writer, stack_pop(m)) catch return Interpret_Error.Runtime_Error;
+                writer.writeByte('\n') catch return Interpret_Error.Runtime_Error;
+            },
         }
     }
+}
+
+fn read_string(m: *VM) *value.Obj_String {
+    const constant = read_constant(m);
+    return value.as_string(constant);
 }
 
 fn concatenate(m: *VM) !void {
