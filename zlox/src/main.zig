@@ -8,7 +8,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const alloc = gpa.allocator();
 
-    var m = vm.init(alloc);
+    var m = vm.init_vm(alloc);
     defer vm.deinit(&m);
 
     const args = try std.process.argsAlloc(alloc);

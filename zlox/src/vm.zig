@@ -7,12 +7,15 @@ const compiler = @import("compiler.zig");
 
 const stack_max = 256;
 
+const String_Table = std.StringHashMap(*value.Obj_String);
+
 pub const VM = struct {
     chunk: chunk.Chunk,
     ip: [*]u8,
     stack: [stack_max]value.Value,
     stack_top: [*]value.Value,
     objects: ?*value.Obj,
+    strings: String_Table,
     alloc: std.mem.Allocator,
 };
 
@@ -22,19 +25,21 @@ pub const Interpret_Error = error{
     Runtime_Error,
 };
 
-pub fn init(alloc: std.mem.Allocator) VM {
+pub fn init_vm(alloc: std.mem.Allocator) VM {
     return .{
         .chunk = undefined,
         .ip = undefined,
         .stack = undefined,
         .stack_top = undefined,
         .objects = null,
+        .strings = String_Table.init(alloc),
         .alloc = alloc,
     };
 }
 
 pub fn deinit(m: *VM) void {
     deinit_objects(m);
+    m.strings.deinit();
 }
 
 fn deinit_objects(m: *VM) void {
@@ -86,7 +91,7 @@ fn run(m: *VM) Interpret_Error!void {
             }
             std.debug.print("\n", .{});
 
-            const offset = @ptrToInt(m.ip) - @ptrToInt(m.chunk.code.items.ptr);
+            const offset = @intFromPtr(m.ip) - @intFromPtr(m.chunk.code.items.ptr);
             _ = debug.disassemble_instruction(m.chunk, offset);
         }
 
@@ -201,7 +206,7 @@ fn peek(m: *VM, distance: usize) value.Value {
 fn runtime_error(m: *VM, comptime format: []const u8, args: anytype) void {
     const stderr = std.io.getStdErr().writer();
     stderr.print(format ++ "\n", args) catch {};
-    const instruction = @ptrToInt(m.ip) - @ptrToInt(m.chunk.code.items.ptr) - 1;
+    const instruction = @intFromPtr(m.ip) - @intFromPtr(m.chunk.code.items.ptr) - 1;
     const line = m.chunk.lines.items[instruction];
     stderr.print("[line {d}] in script\n", .{line}) catch {};
     reset_stack(m);
@@ -215,7 +220,7 @@ fn read_byte(m: *VM) u8 {
 }
 
 fn read_byte_code(m: *VM) chunk.Op_Code {
-    return @intToEnum(chunk.Op_Code, read_byte(m));
+    return @enumFromInt(chunk.Op_Code, read_byte(m));
 }
 
 fn read_constant(m: *VM) value.Value {

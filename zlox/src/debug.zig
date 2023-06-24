@@ -23,7 +23,7 @@ pub fn disassemble_instruction(c: chunk.Chunk, offset: usize) usize {
     }
 
     const instruction = c.code.items[offset];
-    return switch (@intToEnum(chunk.Op_Code, instruction)) {
+    return switch (@enumFromInt(chunk.Op_Code, instruction)) {
         .Return => simple_instruction("Return", offset),
         .Constant => constant_instruction("Constant", c, offset),
         .Nil => simple_instruction("Nil", offset),

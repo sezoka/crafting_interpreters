@@ -92,8 +92,8 @@ fn unary(p: *Parser) !void {
     try parse_precedence(p, .Unary);
 
     switch (operator_kind) {
-        .Bang => try emit_byte(p, @enumToInt(chunk.Op_Code.Not)),
-        .Minus => try emit_byte(p, @enumToInt(chunk.Op_Code.Negate)),
+        .Bang => try emit_byte(p, @intFromEnum(chunk.Op_Code.Not)),
+        .Minus => try emit_byte(p, @intFromEnum(chunk.Op_Code.Negate)),
         else => return,
     }
 }
@@ -101,19 +101,19 @@ fn unary(p: *Parser) !void {
 fn binary(p: *Parser) !void {
     const operator_kind = p.previous.kind;
     const rule = get_rule(operator_kind);
-    try parse_precedence(p, @intToEnum(Precedence, @enumToInt(rule.precedence) + 1));
+    try parse_precedence(p, @enumFromInt(Precedence, @intFromEnum(rule.precedence) + 1));
 
     switch (operator_kind) {
-        .Bang_Equal => try emit_bytes(p, @enumToInt(chunk.Op_Code.Equal), @enumToInt(chunk.Op_Code.Not)),
-        .Equal_Equal => try emit_byte(p, @enumToInt(chunk.Op_Code.Equal)),
-        .Greater => try emit_byte(p, @enumToInt(chunk.Op_Code.Greater)),
-        .Greater_Equal => try emit_bytes(p, @enumToInt(chunk.Op_Code.Less), @enumToInt(chunk.Op_Code.Not)),
-        .Less => try emit_byte(p, @enumToInt(chunk.Op_Code.Less)),
-        .Less_Equal => try emit_bytes(p, @enumToInt(chunk.Op_Code.Greater), @enumToInt(chunk.Op_Code.Not)),
-        .Plus => try emit_byte(p, @enumToInt(chunk.Op_Code.Add)),
-        .Minus => try emit_byte(p, @enumToInt(chunk.Op_Code.Subtract)),
-        .Star => try emit_byte(p, @enumToInt(chunk.Op_Code.Multiply)),
-        .Slash => try emit_byte(p, @enumToInt(chunk.Op_Code.Divide)),
+        .Bang_Equal => try emit_bytes(p, @intFromEnum(chunk.Op_Code.Equal), @intFromEnum(chunk.Op_Code.Not)),
+        .Equal_Equal => try emit_byte(p, @intFromEnum(chunk.Op_Code.Equal)),
+        .Greater => try emit_byte(p, @intFromEnum(chunk.Op_Code.Greater)),
+        .Greater_Equal => try emit_bytes(p, @intFromEnum(chunk.Op_Code.Less), @intFromEnum(chunk.Op_Code.Not)),
+        .Less => try emit_byte(p, @intFromEnum(chunk.Op_Code.Less)),
+        .Less_Equal => try emit_bytes(p, @intFromEnum(chunk.Op_Code.Greater), @intFromEnum(chunk.Op_Code.Not)),
+        .Plus => try emit_byte(p, @intFromEnum(chunk.Op_Code.Add)),
+        .Minus => try emit_byte(p, @intFromEnum(chunk.Op_Code.Subtract)),
+        .Star => try emit_byte(p, @intFromEnum(chunk.Op_Code.Multiply)),
+        .Slash => try emit_byte(p, @intFromEnum(chunk.Op_Code.Divide)),
         else => return,
     }
 }
@@ -128,7 +128,7 @@ fn parse_precedence(p: *Parser, precedence: Precedence) !void {
 
     try prefix_rule.?(p);
 
-    while (@enumToInt(precedence) <= @enumToInt(get_rule(p.current.kind).precedence)) {
+    while (@intFromEnum(precedence) <= @intFromEnum(get_rule(p.current.kind).precedence)) {
         advance(p);
         const infix_rule = get_rule(p.previous.kind).infix;
         try infix_rule.?(p);
@@ -142,7 +142,7 @@ fn number(p: *Parser) Parse_Fn_Error!void {
 
 fn emit_constant(p: *Parser, val: value.Value) !void {
     const constant = try make_constant(p, val);
-    try emit_bytes(p, @enumToInt(chunk.Op_Code.Constant), constant);
+    try emit_bytes(p, @intFromEnum(chunk.Op_Code.Constant), constant);
 }
 
 fn make_constant(p: *Parser, val: value.Value) !u8 {
@@ -165,7 +165,7 @@ fn end_compiler(p: *Parser) !void {
 }
 
 fn emit_return(p: *Parser) !void {
-    try emit_byte(p, @enumToInt(chunk.Op_Code.Return));
+    try emit_byte(p, @intFromEnum(chunk.Op_Code.Return));
 }
 
 fn emit_bytes(p: *Parser, byte1: u8, byte2: u8) !void {
@@ -231,9 +231,9 @@ fn error_at(p: *Parser, token: scanner.Token, message: []const u8) void {
 
 fn literal(p: *Parser) Parse_Fn_Error!void {
     switch (p.previous.kind) {
-        .True => try emit_byte(p, @enumToInt(chunk.Op_Code.True)),
-        .False => try emit_byte(p, @enumToInt(chunk.Op_Code.False)),
-        .Nil => try emit_byte(p, @enumToInt(chunk.Op_Code.Nil)),
+        .True => try emit_byte(p, @intFromEnum(chunk.Op_Code.True)),
+        .False => try emit_byte(p, @intFromEnum(chunk.Op_Code.False)),
+        .Nil => try emit_byte(p, @intFromEnum(chunk.Op_Code.Nil)),
         else => return,
     }
 }

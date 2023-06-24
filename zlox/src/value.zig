@@ -96,11 +96,14 @@ pub fn obj_kind(value: Value) Obj_Kind {
     return value.as.obj.kind;
 }
 
-pub fn copy_string(m: *vm.VM, str: []const u8) !*Obj_String {
-    const chars = try m.alloc.alloc(u8, str.len);
+pub fn copy_string(m: *vm.VM, chars: []const u8) !*Obj_String {
+    if (m.strings.get(chars)) |interned| {
+        return interned;
+    }
+    const new_chars = try m.alloc.alloc(u8, chars.len);
     errdefer m.alloc.free(chars);
-    @memcpy(chars, str);
-    return allocate_string(m, chars);
+    @memcpy(new_chars, chars);
+    return allocate_string(m, new_chars);
 }
 
 fn allocate_string(m: *vm.VM, chars: []const u8) !*Obj_String {
@@ -109,10 +112,15 @@ fn allocate_string(m: *vm.VM, chars: []const u8) !*Obj_String {
     m.objects = &string.obj;
     string.obj.kind = .String;
     string.chars = chars;
+    try m.strings.put(chars, string);
     return string;
 }
 
 pub fn take_string(m: *vm.VM, chars: []const u8) !*Obj_String {
+    if (m.strings.get(chars)) |interned| {
+        m.alloc.free(chars);
+        return interned;
+    }
     return allocate_string(m, chars);
 }
 
@@ -145,10 +153,6 @@ pub fn values_equal(a: Value, b: Value) bool {
         .Bool => as_bool(a) == as_bool(b),
         .Nil => true,
         .Number => as_number(a) == as_number(b),
-        .Obj => {
-            const a_str = as_string_chars(a);
-            const b_str = as_string_chars(b);
-            return std.mem.eql(u8, a_str, b_str);
-        },
+        .Obj => return as_obj(a) == as_obj(b),
     };
 }

@@ -48,7 +48,7 @@ pub fn append_byte(c: *Chunk, byte: u8, line: u32) !void {
 }
 
 pub fn append_byte_code(c: *Chunk, code: Op_Code, line: u32) !void {
-    try append_byte(c, @enumToInt(code), line);
+    try append_byte(c, @intFromEnum(code), line);
 }
 
 pub fn append_constant(c: *Chunk, v: value.Value) !void {

@@ -17,7 +17,7 @@ pub fn init_scanner(source: []const u8) Scanner {
     return .{
         .start = start,
         .current = start,
-        .last = @ptrToInt(&source[source.len - 1]),
+        .last = @intFromPtr(&source[source.len - 1]),
         .line = 1,
     };
 }
@@ -186,7 +186,7 @@ fn advance(s: *Scanner) u8 {
 }
 
 fn is_at_end(s: *Scanner) bool {
-    return s.last < @ptrToInt(s.current);
+    return s.last < @intFromPtr(s.current);
 }
 
 fn make_token(s: *Scanner, kind: Token_Kind) Token {
@@ -210,7 +210,7 @@ fn get_literal(s: *Scanner) []const u8 {
 }
 
 fn get_literal_length(s: *Scanner) usize {
-    return @ptrToInt(s.current) - @ptrToInt(s.start);
+    return @intFromPtr(s.current) - @intFromPtr(s.start);
 }
 
 pub const Token_Kind = enum {
