@@ -1,5 +1,5 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const config = @import("config.zig");
 const debug = @import("debug.zig");
 const chunk = @import("chunk.zig");
 const scanner = @import("scanner.zig");
@@ -13,6 +13,7 @@ const Parser = struct {
     had_error: bool,
     scanner: *scanner.Scanner,
     compiling_chunk: *chunk.Chunk,
+    compiler: *Compiler,
     vm: *vm.VM,
 };
 
@@ -36,11 +37,26 @@ const Parse_Rule = struct {
     precedence: Precedence = .None,
 };
 
+const Compiler = struct {
+    locals: [U8_COUNT]Local,
+    local_count: i32,
+    scope_depth: i32,
+};
+
+const Local = struct {
+    name: scanner.Token,
+    depth: i32,
+};
+
 const Parse_Fn_Error = error{ OutOfMemory, TooManyConstants };
+
+const Compile_Error = error{ OutOfMemory, TooManyConstants };
 
 const Parse_Fn = fn (p: *Parser, can_assign: bool) Parse_Fn_Error!void;
 
-fn init_parser(m: *vm.VM, s: *scanner.Scanner, ch: *chunk.Chunk) Parser {
+const U8_COUNT = 256;
+
+fn init_parser(m: *vm.VM, s: *scanner.Scanner, ch: *chunk.Chunk, compiler: *Compiler) Parser {
     return .{
         .current = undefined,
         .previous = undefined,
@@ -49,6 +65,15 @@ fn init_parser(m: *vm.VM, s: *scanner.Scanner, ch: *chunk.Chunk) Parser {
         .scanner = s,
         .compiling_chunk = ch,
         .vm = m,
+        .compiler = compiler,
+    };
+}
+
+fn init_compiler() Compiler {
+    return .{
+        .local_count = 0,
+        .scope_depth = 0,
+        .locals = [_]Local{.{ .name = undefined, .depth = 0 }} ** 256,
     };
 }
 
@@ -57,7 +82,8 @@ pub fn compile(m: *vm.VM, source: []const u8) !chunk.Chunk {
     errdefer chunk.deinit_chunk(&ch);
 
     var s = scanner.init_scanner(source);
-    var parser = init_parser(m, &s, &ch);
+    var compiler = init_compiler();
+    var parser = init_parser(m, &s, &ch, &compiler);
     advance(&parser);
 
     while (!match(&parser, .Eof)) {
@@ -98,7 +124,48 @@ fn var_declaration(p: *Parser) !void {
 
 fn parse_variable(p: *Parser, error_message: []const u8) !u8 {
     consume(p, .Identifier, error_message);
+
+    try declare_variable(p);
+    if (0 < p.compiler.scope_depth) return 0;
+
     return identifier_constant(p, &p.previous);
+}
+
+fn declare_variable(p: *Parser) !void {
+    if (p.compiler.scope_depth == 0) return;
+
+    const name = &p.previous;
+
+    var i = p.compiler.local_count - 1;
+    while (0 <= i) : (i -= 1) {
+        const local = &p.compiler.locals[@intCast(usize, i)];
+        if (local.depth != -1 and local.depth < p.compiler.scope_depth) {
+            break;
+        }
+
+        if (identifiers_equal(name, &local.name)) {
+            error_(p, "Already a variable with this name if this scope.");
+        }
+    }
+
+    add_local(p, name.*);
+}
+
+fn identifiers_equal(a: *scanner.Token, b: *scanner.Token) bool {
+    return std.mem.eql(u8, a.literal, b.literal);
+}
+
+fn add_local(p: *Parser, name: scanner.Token) void {
+    if (p.compiler.local_count == U8_COUNT) {
+        error_(p, "too many local variables in function.");
+        return;
+    }
+
+    var local = &p.compiler.locals[@intCast(usize, p.compiler.local_count)];
+    p.compiler.local_count += 1;
+    local.name = name;
+    local.depth = -1;
+    local.depth = p.compiler.scope_depth;
 }
 
 fn identifier_constant(p: *Parser, name: *scanner.Token) !u8 {
@@ -107,7 +174,16 @@ fn identifier_constant(p: *Parser, name: *scanner.Token) !u8 {
 }
 
 fn define_variable(p: *Parser, global: u8) !void {
+    if (0 < p.compiler.scope_depth) {
+        mark_initialized(p);
+        return;
+    }
+
     try emit_bytes(p, @intFromEnum(chunk.Op_Code.Define_Global), global);
+}
+
+fn mark_initialized(p: *Parser) void {
+    p.compiler.locals[@intCast(usize, p.compiler.local_count - 1)].depth = p.compiler.scope_depth;
 }
 
 fn synchronize(p: *Parser) void {
@@ -133,9 +209,36 @@ fn synchronize(p: *Parser) void {
 fn statement(p: *Parser) !void {
     if (match(p, .Print)) {
         try print_statement(p);
+    } else if (match(p, .Left_Brace)) {
+        begin_scope(p);
+        try block(p);
+        try end_scope(p);
     } else {
         try expression_statement(p);
     }
+}
+
+fn begin_scope(p: *Parser) void {
+    p.compiler.scope_depth += 1;
+}
+
+fn end_scope(p: *Parser) !void {
+    p.compiler.scope_depth -= 1;
+
+    while (0 < p.compiler.local_count and
+        p.compiler.scope_depth < p.compiler.locals[@intCast(usize, p.compiler.local_count - 1)].depth)
+    {
+        try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+        p.compiler.local_count -= 1;
+    }
+}
+
+fn block(p: *Parser) Compile_Error!void {
+    while (!check(p, .Right_Brace) and !check(p, .Eof)) {
+        try declaration(p);
+    }
+
+    consume(p, .Right_Brace, "Expect '}' after block.");
 }
 
 fn expression_statement(p: *Parser) !void {
@@ -251,7 +354,7 @@ fn make_constant(p: *Parser, val: value.Value) !u8 {
 
 fn end_compiler(p: *Parser) !void {
     try emit_return(p);
-    if (builtin.mode == .Debug) {
+    if (config.show_debug_info) {
         if (!p.had_error) {
             debug.disassemble_chunk(current_chunk(p).*, "code");
         }
@@ -337,14 +440,43 @@ fn variable(p: *Parser, can_assign: bool) Parse_Fn_Error!void {
 }
 
 fn named_variable(p: *Parser, name: *scanner.Token, can_assign: bool) Parse_Fn_Error!void {
-    const arg = try identifier_constant(p, name);
+    var get_op: u8 = 0;
+    var set_op: u8 = 0;
+
+    var arg = resolve_local(p, name);
+    if (arg != -1) {
+        get_op = @intFromEnum(chunk.Op_Code.Get_Local);
+        set_op = @intFromEnum(chunk.Op_Code.Set_Local);
+    } else {
+        arg = try identifier_constant(p, name);
+        get_op = @intFromEnum(chunk.Op_Code.Get_Global);
+        set_op = @intFromEnum(chunk.Op_Code.Set_Global);
+    }
+
+    const arg_byte = @intCast(u8, arg);
 
     if (can_assign and match(p, .Equal)) {
         try expression(p);
-        try emit_bytes(p, @intFromEnum(chunk.Op_Code.Set_Global), arg);
+        try emit_bytes(p, set_op, arg_byte);
     } else {
-        try emit_bytes(p, @intFromEnum(chunk.Op_Code.Get_Global), arg);
+        try emit_bytes(p, get_op, arg_byte);
     }
+}
+
+fn resolve_local(p: *Parser, name: *scanner.Token) i32 {
+    const c = p.compiler;
+    var i: i32 = c.local_count - 1;
+    while (0 <= i) : (i -= 1) {
+        const local = &c.locals[@intCast(usize, i)];
+        if (identifiers_equal(name, &local.name)) {
+            if (local.depth == -1) {
+                error_(p, "Can't read local variable in its own initializer.");
+            }
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 fn get_rule(kind: scanner.Token_Kind) *const Parse_Rule {

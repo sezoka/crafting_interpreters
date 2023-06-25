@@ -1,5 +1,5 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const config = @import("config.zig");
 const chunk = @import("chunk.zig");
 const value = @import("value.zig");
 const debug = @import("debug.zig");
@@ -85,7 +85,7 @@ fn run(m: *VM) Interpret_Error!void {
     const writer = std.io.getStdOut().writer();
 
     while (true) {
-        if (builtin.mode == .Debug) {
+        if (config.show_debug_info) {
             std.debug.print("          ", .{});
 
             var slot = @ptrCast([*]value.Value, &m.stack[0]);
@@ -120,6 +120,14 @@ fn run(m: *VM) Interpret_Error!void {
             },
             .Pop => {
                 _ = stack_pop(m);
+            },
+            .Get_Local => {
+                const slot = read_byte(m);
+                stack_push(m, m.stack[slot]);
+            },
+            .Set_Local => {
+                const slot = read_byte(m);
+                m.stack[slot] = peek(m, 0);
             },
             .Get_Global => {
                 const name = read_string(m);

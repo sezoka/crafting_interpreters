@@ -1,5 +1,6 @@
 const std = @import("std");
 const debug = @import("debug.zig");
+const config = @import("config.zig");
 const chunk = @import("chunk.zig");
 const vm = @import("vm.zig");
 
@@ -37,7 +38,12 @@ fn repl(m: *vm.VM) !void {
             if (err == error.EndOfStream) break;
         };
         if (line.items.len == 0) continue;
-        vm.interpret(m, line.items) catch {};
+        vm.interpret(m, line.items) catch |err| {
+            if (config.show_debug_info) {
+                return err;
+            }
+        };
+
         line.clearAndFree();
     }
 }
@@ -52,6 +58,9 @@ fn run_file(m: *vm.VM, path: []const u8) !void {
     };
     defer m.alloc.free(source);
 
-    std.debug.print("{any}", .{source[source.len - 10 .. source.len]});
-    try vm.interpret(m, source);
+    vm.interpret(m, source) catch |err| {
+        if (config.show_debug_info) {
+            return err;
+        }
+    };
 }

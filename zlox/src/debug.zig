@@ -30,6 +30,8 @@ pub fn disassemble_instruction(c: chunk.Chunk, offset: usize) usize {
         .True => simple_instruction("True", offset),
         .False => simple_instruction("False", offset),
         .Pop => simple_instruction("Pop", offset),
+        .Get_Local => byte_instruction("Get_Local", c, offset),
+        .Set_Local => byte_instruction("Set_Local", c, offset),
         .Get_Global => constant_instruction("Get_Global", c, offset),
         .Define_Global => constant_instruction("Define_Global", c, offset),
         .Set_Global => constant_instruction("Set_Global", c, offset),
@@ -46,6 +48,12 @@ pub fn disassemble_instruction(c: chunk.Chunk, offset: usize) usize {
     };
 }
 
+fn byte_instruction(name: []const u8, c: chunk.Chunk, offset: usize) usize {
+    const slot = c.code.items[offset + 1];
+    std.debug.print("{s: <16} {d:4}\n", .{ name, slot });
+    return offset + 2;
+}
+
 fn simple_instruction(name: []const u8, offset: usize) usize {
     std.debug.print("{s}\n", .{name});
     return offset + 1;
@@ -54,7 +62,7 @@ fn simple_instruction(name: []const u8, offset: usize) usize {
 fn constant_instruction(name: []const u8, c: chunk.Chunk, offset: usize) usize {
     const constant_idx = c.code.items[offset + 1];
     const constant = c.constants.items[constant_idx];
-    std.debug.print("{s: <16} '", .{name});
+    std.debug.print("{s: <16} {d:4}'", .{ name, constant_idx });
     value.print_value(constant) catch {};
     std.debug.print("'\n", .{});
     return offset + 2;

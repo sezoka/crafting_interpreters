@@ -8,6 +8,8 @@ pub const Op_Code = enum {
     True,
     False,
     Pop,
+    Get_Local,
+    Set_Local,
     Get_Global,
     Define_Global,
     Set_Global,
