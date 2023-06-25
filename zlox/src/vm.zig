@@ -105,6 +105,14 @@ fn run(m: *VM) Interpret_Error!void {
             .Return => {
                 return;
             },
+            .Jump => {
+                const offset = read_short(m);
+                m.ip += offset;
+            },
+            .Jump_If_False => {
+                const offset = read_short(m);
+                if (is_falsey(peek(m, 0))) m.ip += offset;
+            },
             .Constant => {
                 const constant = read_constant(m);
                 stack_push(m, constant);
@@ -200,6 +208,11 @@ fn run(m: *VM) Interpret_Error!void {
             },
         }
     }
+}
+
+fn read_short(m: *VM) u16 {
+    m.ip += 2;
+    return (@intCast(u16, (m.ip - 2)[0]) << 8) | @intCast(u16, (m.ip - 1)[0]);
 }
 
 fn read_string(m: *VM) *value.Obj_String {

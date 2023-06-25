@@ -22,6 +22,8 @@ pub const Op_Code = enum {
     Divide,
     Not,
     Print,
+    Jump,
+    Jump_If_False,
     Negate,
 };
 

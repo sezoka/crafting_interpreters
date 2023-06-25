@@ -25,6 +25,8 @@ pub fn disassemble_instruction(c: chunk.Chunk, offset: usize) usize {
     const instruction = c.code.items[offset];
     return switch (@enumFromInt(chunk.Op_Code, instruction)) {
         .Return => simple_instruction("Return", offset),
+        .Jump => jump_instruction("Jump", 1, c, offset),
+        .Jump_If_False => jump_instruction("Jump_If_False", 1, c, offset),
         .Constant => constant_instruction("Constant", c, offset),
         .Nil => simple_instruction("Nil", offset),
         .True => simple_instruction("True", offset),
@@ -46,6 +48,13 @@ pub fn disassemble_instruction(c: chunk.Chunk, offset: usize) usize {
         .Print => simple_instruction("Print", offset),
         .Negate => simple_instruction("Negate", offset),
     };
+}
+
+fn jump_instruction(name: []const u8, sign: usize, c: chunk.Chunk, offset: usize) usize {
+    var jump = @intCast(u16, c.code.items[offset + 1]) << 8;
+    jump |= c.code.items[offset + 2];
+    std.debug.print("{s: <16} {d:4} -> {d}\n", .{ name, offset, offset + 3 + sign + jump });
+    return offset + 3;
 }
 
 fn byte_instruction(name: []const u8, c: chunk.Chunk, offset: usize) usize {

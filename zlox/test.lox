@@ -13,3 +13,9 @@ print breakfast;
     }
     print a;
 }
+
+if (false) {
+    print "true";
+}
+
+print "end";

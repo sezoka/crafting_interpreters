@@ -55,6 +55,7 @@ const Compile_Error = error{ OutOfMemory, TooManyConstants };
 const Parse_Fn = fn (p: *Parser, can_assign: bool) Parse_Fn_Error!void;
 
 const U8_COUNT = 256;
+const U16_MAX = std.math.maxInt(u16);
 
 fn init_parser(m: *vm.VM, s: *scanner.Scanner, ch: *chunk.Chunk, compiler: *Compiler) Parser {
     return .{
@@ -209,6 +210,8 @@ fn synchronize(p: *Parser) void {
 fn statement(p: *Parser) !void {
     if (match(p, .Print)) {
         try print_statement(p);
+    } else if (match(p, .If)) {
+        try if_statement(p);
     } else if (match(p, .Left_Brace)) {
         begin_scope(p);
         try block(p);
@@ -216,6 +219,41 @@ fn statement(p: *Parser) !void {
     } else {
         try expression_statement(p);
     }
+}
+
+fn if_statement(p: *Parser) Compile_Error!void {
+    consume(p, .Left_Paren, "Expect '(' after 'if'.");
+    try expression(p);
+    consume(p, .Right_Paren, "Expect ')' after condition.");
+
+    const then_jump = try emit_jump(p, .Jump_If_False);
+    try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+    try statement(p);
+
+    const else_jump = try emit_jump(p, .Jump);
+
+    patch_jump(p, then_jump);
+
+    if (match(p, .Else)) try statement(p);
+    patch_jump(p, else_jump);
+}
+
+fn emit_jump(p: *Parser, instruction: chunk.Op_Code) !i32 {
+    try emit_byte(p, @intFromEnum(instruction));
+    try emit_byte(p, 0xff);
+    try emit_byte(p, 0xff);
+    return @intCast(i32, current_chunk(p).code.items.len - 2);
+}
+
+fn patch_jump(p: *Parser, offset: i32) void {
+    const jump = current_chunk(p).code.items.len - 2;
+
+    if (U16_MAX < jump) {
+        error_(p, "Too much code to jump over.");
+    }
+
+    current_chunk(p).code.items[@intCast(usize, offset)] = @intCast(u8, (jump >> 8) & 0xff);
+    current_chunk(p).code.items[@intCast(usize, offset + 1)] = @intCast(u8, jump & 0xff);
 }
 
 fn begin_scope(p: *Parser) void {
