@@ -24,6 +24,7 @@ pub const Op_Code = enum {
     Print,
     Jump,
     Jump_If_False,
+    Loop,
     Negate,
 };
 

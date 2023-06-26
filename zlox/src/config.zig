@@ -1,1 +1,1 @@
-pub const show_debug_info = true;
+pub const show_debug_info = false;

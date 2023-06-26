@@ -1,21 +1,37 @@
-var breakfast = "beignets";
-var beverage = "cafe au lait";
-breakfast = "beignets with " + beverage;
 
-print breakfast;
 
-{
-    var a = "outer";
-    {
-        var a = "inner";
-        print a;
-        print beverage;
-    }
-    print a;
+
+// var breakfast = "beignets";
+// var beverage = "cafe au lait";
+// breakfast = "beignets with " + beverage;
+// 
+// print breakfast;
+// 
+// {
+//     var a = "outer";
+//     {
+//         var a = "inner";
+//         print a;
+//         print beverage;
+//     }
+//     print a;
+// }
+// 
+// if (nil) {
+//     print "true";
+// }
+// 
+// print "end";
+// 
+// var i = 0;
+// while (i < 10) {
+//     print i;
+//     i = i + 1;
+// }
+// 
+
+
+for (var i = 0; i < 1000000; i = i + 1) {
 }
 
-if (false) {
-    print "true";
-}
-
-print "end";
+print "End";

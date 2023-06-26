@@ -82,8 +82,8 @@ fn identifier_kind(s: *Scanner) Token_Kind {
             if (1 < get_literal_length(s)) {
                 return switch (s.start[1]) {
                     'a' => check_keyword(s, 2, 3, "lse", .False),
-                    'o' => check_keyword(s, 2, 3, "or", .For),
-                    'u' => check_keyword(s, 2, 3, "un", .Fun),
+                    'o' => check_keyword(s, 2, 1, "r", .For),
+                    'u' => check_keyword(s, 2, 1, "un", .Fun),
                     else => .Identifier,
                 };
             }
@@ -92,8 +92,8 @@ fn identifier_kind(s: *Scanner) Token_Kind {
         't' => {
             if (1 < get_literal_length(s)) {
                 return switch (s.start[1]) {
-                    'h' => check_keyword(s, 2, 2, "is", .This),
-                    'r' => check_keyword(s, 2, 2, "ue", .True),
+                    'h' => check_keyword(s, 2, 4, "is", .This),
+                    'r' => check_keyword(s, 2, 4, "ue", .True),
                     else => .Identifier,
                 };
             }

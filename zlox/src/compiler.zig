@@ -183,6 +183,26 @@ fn define_variable(p: *Parser, global: u8) !void {
     try emit_bytes(p, @intFromEnum(chunk.Op_Code.Define_Global), global);
 }
 
+fn and_(p: *Parser, _: bool) !void {
+    const end_jump = try emit_jump(p, .Jump_If_False);
+
+    try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+    try parse_precedence(p, .And);
+
+    patch_jump(p, end_jump);
+}
+
+fn or_(p: *Parser, _: bool) !void {
+    const else_jump = try emit_jump(p, .Jump_If_False);
+    const end_jump = try emit_jump(p, .Jump);
+
+    patch_jump(p, else_jump);
+    try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+
+    try parse_precedence(p, .Or);
+    patch_jump(p, end_jump);
+}
+
 fn mark_initialized(p: *Parser) void {
     p.compiler.locals[@intCast(usize, p.compiler.local_count - 1)].depth = p.compiler.scope_depth;
 }
@@ -210,8 +230,12 @@ fn synchronize(p: *Parser) void {
 fn statement(p: *Parser) !void {
     if (match(p, .Print)) {
         try print_statement(p);
+    } else if (match(p, .For)) {
+        try for_statement(p);
     } else if (match(p, .If)) {
         try if_statement(p);
+    } else if (match(p, .While)) {
+        try while_statement(p);
     } else if (match(p, .Left_Brace)) {
         begin_scope(p);
         try block(p);
@@ -219,6 +243,76 @@ fn statement(p: *Parser) !void {
     } else {
         try expression_statement(p);
     }
+}
+
+fn for_statement(p: *Parser) Compile_Error!void {
+    begin_scope(p);
+    consume(p, .Left_Paren, "Expect '(' after 'for'.");
+
+    if (match(p, .Semicolon)) {
+        //
+    } else if (match(p, .Var)) {
+        try var_declaration(p);
+    } else {
+        try expression_statement(p);
+    }
+
+    var loop_start = @intCast(i32, current_chunk(p).code.items.len);
+    var exit_jump: i32 = -1;
+    if (!match(p, .Semicolon)) {
+        try expression(p);
+        consume(p, .Semicolon, "Expect ';' after loop condition.");
+
+        exit_jump = try emit_jump(p, .Jump_If_False);
+        try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+    }
+
+    if (!match(p, .Right_Paren)) {
+        const body_jump = try emit_jump(p, .Jump);
+        const increment_start = current_chunk(p).code.items.len;
+        try expression(p);
+        try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+        consume(p, .Right_Paren, "Expect ')' after for clauses.");
+
+        try emit_loop(p, loop_start);
+        loop_start = @intCast(i32, increment_start);
+        patch_jump(p, body_jump);
+    }
+
+    try statement(p);
+    try emit_loop(p, loop_start);
+
+    if (exit_jump != -1) {
+        patch_jump(p, exit_jump);
+        try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+    }
+
+    try end_scope(p);
+}
+
+fn while_statement(p: *Parser) Compile_Error!void {
+    const loop_start = @intCast(i32, current_chunk(p).code.items.len);
+    consume(p, .Left_Paren, "Expect '(' after 'while'.");
+    try expression(p);
+    consume(p, .Right_Paren, "Expecct ')' after condition.");
+
+    const exit_jump = try emit_jump(p, .Jump_If_False);
+    try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+    try statement(p);
+    try emit_loop(p, loop_start);
+
+    patch_jump(p, exit_jump);
+    try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
+}
+
+fn emit_loop(p: *Parser, loop_start: i32) !void {
+    try emit_byte(p, @intFromEnum(chunk.Op_Code.Loop));
+
+    const offset = current_chunk(p).code.items.len - @intCast(usize, loop_start) + 2;
+    if (U16_MAX < offset) error_(p, "Loop body too large.");
+
+    try emit_byte(p, @intCast(u8, (offset >> 8) & 0xff));
+    try emit_byte(p, @intCast(u8, offset & 0xff));
 }
 
 fn if_statement(p: *Parser) Compile_Error!void {
@@ -233,6 +327,7 @@ fn if_statement(p: *Parser) Compile_Error!void {
     const else_jump = try emit_jump(p, .Jump);
 
     patch_jump(p, then_jump);
+    try emit_byte(p, @intFromEnum(chunk.Op_Code.Pop));
 
     if (match(p, .Else)) try statement(p);
     patch_jump(p, else_jump);
@@ -246,7 +341,7 @@ fn emit_jump(p: *Parser, instruction: chunk.Op_Code) !i32 {
 }
 
 fn patch_jump(p: *Parser, offset: i32) void {
-    const jump = current_chunk(p).code.items.len - 2;
+    const jump = current_chunk(p).code.items.len - @intCast(usize, offset) - 2;
 
     if (U16_MAX < jump) {
         error_(p, "Too much code to jump over.");
@@ -541,7 +636,7 @@ fn get_rule(kind: scanner.Token_Kind) *const Parse_Rule {
         .Identifier => .{ .prefix = variable },
         .String => .{ .prefix = string },
         .Number => .{ .prefix = number },
-        .And => .{},
+        .And => .{ .infix = and_, .precedence = .And },
         .Class => .{},
         .Else => .{},
         .False => .{ .prefix = literal },
@@ -549,7 +644,7 @@ fn get_rule(kind: scanner.Token_Kind) *const Parse_Rule {
         .Fun => .{},
         .If => .{},
         .Nil => .{ .prefix = literal },
-        .Or => .{},
+        .Or => .{ .infix = or_, .precedence = .Or },
         .Print => .{},
         .Return => .{},
         .Super => .{},
