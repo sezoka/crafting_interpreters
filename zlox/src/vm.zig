@@ -61,6 +61,11 @@ fn deinit_object(m: *VM, obj: *value.Obj) void {
             m.alloc.free(string.chars);
             m.alloc.destroy(string);
         },
+        .Function => {
+            const function = @fieldParentPtr(value.Obj_Function, "obj", obj);
+            chunk.deinit_chunk(&function.chunk);
+            m.alloc.destroy(function);
+        },
     }
 }
 

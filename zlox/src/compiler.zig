@@ -38,9 +38,17 @@ const Parse_Rule = struct {
 };
 
 const Compiler = struct {
+    function: ?*value.Obj_Function,
+    kind: Function_Kind,
+
     locals: [U8_COUNT]Local,
     local_count: i32,
     scope_depth: i32,
+};
+
+const Function_Kind = enum {
+    Function,
+    Script,
 };
 
 const Local = struct {
@@ -70,12 +78,18 @@ fn init_parser(m: *vm.VM, s: *scanner.Scanner, ch: *chunk.Chunk, compiler: *Comp
     };
 }
 
-fn init_compiler() Compiler {
-    return .{
+fn init_compiler(alloc: std.mem.Allocator, kind: Function_Kind) Compiler {
+    var c = .{
+        .function = value.init_function(alloc),
+        .kind = kind,
         .local_count = 0,
         .scope_depth = 0,
         .locals = [_]Local{.{ .name = undefined, .depth = 0 }} ** 256,
     };
+
+
+    // HERE
+    
 }
 
 pub fn compile(m: *vm.VM, source: []const u8) !chunk.Chunk {
@@ -83,7 +97,7 @@ pub fn compile(m: *vm.VM, source: []const u8) !chunk.Chunk {
     errdefer chunk.deinit_chunk(&ch);
 
     var s = scanner.init_scanner(source);
-    var compiler = init_compiler();
+    var compiler = init_compiler(m.alloc, .Script);
     var parser = init_parser(m, &s, &ch, &compiler);
     advance(&parser);
 
@@ -508,7 +522,7 @@ fn emit_byte(p: *Parser, byte: u8) !void {
 }
 
 fn current_chunk(p: *Parser) *chunk.Chunk {
-    return p.compiling_chunk;
+    return p.compiler.function.chunk;
 }
 
 fn consume(p: *Parser, kind: scanner.Token_Kind, message: []const u8) void {

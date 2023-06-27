@@ -1,10 +1,11 @@
 const std = @import("std");
 const vm = @import("vm.zig");
+const chunk = @import("chunk.zig");
 
 pub const Value_Kind = enum {
     Bool,
-    Nil,
     Number,
+    Nil,
     Obj,
 };
 
@@ -19,6 +20,7 @@ pub const Value = struct {
 
 pub const Obj_Kind = enum {
     String,
+    Function,
 };
 
 pub const Obj = struct {
@@ -29,6 +31,13 @@ pub const Obj = struct {
 pub const Obj_String = struct {
     obj: Obj,
     chars: []const u8,
+};
+
+pub const Obj_Function = struct {
+    obj: Obj,
+    arity: i32,
+    chunk: chunk.Chunk,
+    name: []const u8,
 };
 
 pub const Value_Array = std.ArrayList(Value);
@@ -47,6 +56,17 @@ pub fn init_number(value: f64) Value {
 
 pub fn init_obj(value: *Obj) Value {
     return .{ .kind = .Obj, .as = .{ .obj = value } };
+}
+
+pub fn init_function(alloc: std.mem.Allocator) *Obj_Function {
+    var function = try alloc.create(Obj_Function);
+    function.* = .{
+        .obj = .{ .next = null, .kind = .Function },
+        .arity = 0,
+        .name = "",
+        .chunk = try chunk.init_chunk(alloc),
+    };
+    return function;
 }
 
 pub fn as_bool(value: Value) bool {
@@ -68,6 +88,10 @@ pub fn as_string_chars(value: Value) []const u8 {
     return @fieldParentPtr(Obj_String, "obj", as_obj(value)).chars;
 }
 
+pub fn as_function(value: Value) *Obj_Function {
+    return @fieldParentPtr(Obj_Function, "obj", as_obj(value));
+}
+
 pub fn is_bool(value: Value) bool {
     return value.kind == .Bool;
 }
@@ -86,6 +110,10 @@ pub fn is_obj(value: Value) bool {
 
 pub fn is_string(value: Value) bool {
     return is_obj_kind(value, .String);
+}
+
+pub fn is_function(value: Value) bool {
+    return is_obj_kind(value, .Function);
 }
 
 pub fn is_obj_kind(value: Value, kind: Obj_Kind) bool {
@@ -143,7 +171,14 @@ fn print_object(w: anytype, value: Value) !void {
         .String => {
             try w.writeAll(as_string_chars(value));
         },
+        .Function => {
+            try print_function(w, as_function(value));
+        },
     }
+}
+
+fn print_function(w: anytype, function: *Obj_Function) !void {
+    try w.print("<fn {s}>", .{function.name});
 }
 
 pub fn values_equal(a: Value, b: Value) bool {
