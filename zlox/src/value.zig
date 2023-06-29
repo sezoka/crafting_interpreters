@@ -178,6 +178,10 @@ fn print_object(w: anytype, value: Value) !void {
 }
 
 fn print_function(w: anytype, function: *Obj_Function) !void {
+    if (function.name.len == 0) {
+        try w.print("<script>", .{function.name});
+        return;
+    }
     try w.print("<fn {s}>", .{function.name});
 }
 

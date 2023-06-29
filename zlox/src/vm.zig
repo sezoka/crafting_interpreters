@@ -5,20 +5,27 @@ const value = @import("value.zig");
 const debug = @import("debug.zig");
 const compiler = @import("compiler.zig");
 
-const stack_max = 256;
+const FRAMES_MAX = 64;
+const STACK_MAX = 256;
 
 const String_Table = std.StringHashMap(*value.Obj_String);
 const Globals_Table = std.AutoHashMap(*value.Obj_String, value.Value);
 
 pub const VM = struct {
-    chunk: chunk.Chunk,
-    ip: [*]u8,
-    stack: [stack_max]value.Value,
+    frames: [FRAMES_MAX]Call_Frame,
+    frame_count: usize,
+    stack: [STACK_MAX]value.Value,
     stack_top: [*]value.Value,
     objects: ?*value.Obj,
     strings: String_Table,
     globals: Globals_Table,
     alloc: std.mem.Allocator,
+};
+
+pub const Call_Frame = struct {
+    function: *value.Obj_Function,
+    ip: [*]u8,
+    slots: [*]value.Value,
 };
 
 pub const Interpret_Error = error{
@@ -70,6 +77,13 @@ fn deinit_object(m: *VM, obj: *value.Obj) void {
 }
 
 pub fn interpret(m: *VM, source: []const u8) Interpret_Error!void {
+    const function = try compiler.compile(source);
+
+    // HERE
+    if (function)
+
+
+
     var c = compiler.compile(m, source) catch {
         return error.Compile_Error;
     };
@@ -79,15 +93,19 @@ pub fn interpret(m: *VM, source: []const u8) Interpret_Error!void {
     m.ip = @ptrCast([*]u8, m.chunk.code.items.ptr);
     reset_stack(m);
 
-    return run(m);
+    const result = run(m);
+    return result;
 }
 
 fn reset_stack(m: *VM) void {
     m.stack_top = @ptrCast([*]value.Value, &m.stack[0]);
+    m.frame_count = 0;
 }
 
 fn run(m: *VM) Interpret_Error!void {
     const writer = std.io.getStdOut().writer();
+
+    const frame = &m.frames[m.frame_count - 1];
 
     while (true) {
         if (config.show_debug_info) {
@@ -102,7 +120,7 @@ fn run(m: *VM) Interpret_Error!void {
             std.debug.print("\n", .{});
 
             const offset = @intFromPtr(m.ip) - @intFromPtr(m.chunk.code.items.ptr);
-            _ = debug.disassemble_instruction(m.chunk, offset);
+            _ = debug.disassemble_instruction(frame.function.chunk.?, @intFromPtr(frame.ip) - @intFromPtr(frame.function.chunk.code));
         }
 
         var instruction = read_byte_code(m);
@@ -116,11 +134,11 @@ fn run(m: *VM) Interpret_Error!void {
             },
             .Jump => {
                 const offset = read_short(m);
-                m.ip += offset;
+                frame.ip -= offset;
             },
             .Jump_If_False => {
                 const offset = read_short(m);
-                if (is_falsey(peek(m, 0))) m.ip += offset;
+                if (is_falsey(peek(m, 0))) frame.ip += offset;
             },
             .Constant => {
                 const constant = read_constant(m);
@@ -140,11 +158,11 @@ fn run(m: *VM) Interpret_Error!void {
             },
             .Get_Local => {
                 const slot = read_byte(m);
-                stack_push(m, m.stack[slot]);
+                stack_push(m, frame.slots[slot]);
             },
             .Set_Local => {
                 const slot = read_byte(m);
-                m.stack[slot] = peek(m, 0);
+                frame.slots[slot] = peek(m, 0);
             },
             .Get_Global => {
                 const name = read_string(m);
@@ -219,10 +237,10 @@ fn run(m: *VM) Interpret_Error!void {
     }
 }
 
-fn read_short(m: *VM) u16 {
-    m.ip += 2;
-    const hi = @intCast(u16, (m.ip - 2)[0]) << 8;
-    const lo = @intCast(u16, (m.ip - 1)[0]);
+fn read_short(frame: *Call_Frame) u16 {
+    frame.ip += 2;
+    const hi = @intCast(u16, (frame.ip - 2)[0]) << 8;
+    const lo = @intCast(u16, (frame.ip - 1)[0]);
     return hi | lo;
 }
 
@@ -281,20 +299,20 @@ fn runtime_error(m: *VM, comptime format: []const u8, args: anytype) void {
     reset_stack(m);
 }
 
-fn read_byte(m: *VM) u8 {
+fn read_byte(frame: *Call_Frame) u8 {
     // TODO(sezoka): add bounds check maybe
-    const byte = m.ip[0];
-    m.ip += 1;
+    const byte = frame.ip[0];
+    frame.ip += 1;
     return byte;
 }
 
-fn read_byte_code(m: *VM) chunk.Op_Code {
-    return @enumFromInt(chunk.Op_Code, read_byte(m));
+fn read_byte_code(frame: *Call_Frame) chunk.Op_Code {
+    return @enumFromInt(chunk.Op_Code, read_byte(frame));
 }
 
-fn read_constant(m: *VM) value.Value {
-    const idx = read_byte(m);
-    return m.chunk.constants.items[idx];
+fn read_constant(frame: *Call_Frame) value.Value {
+    const idx = read_byte(frame);
+    return frame.chunk.constants.items[idx];
 }
 
 fn stack_push(m: *VM, v: value.Value) void {

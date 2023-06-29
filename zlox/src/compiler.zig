@@ -78,21 +78,23 @@ fn init_parser(m: *vm.VM, s: *scanner.Scanner, ch: *chunk.Chunk, compiler: *Comp
     };
 }
 
-fn init_compiler(alloc: std.mem.Allocator, kind: Function_Kind) Compiler {
+fn init_compiler(p: *Parser, kind: Function_Kind) Compiler {
     var c = .{
-        .function = value.init_function(alloc),
+        .function = value.init_function(p.alloc),
         .kind = kind,
         .local_count = 0,
         .scope_depth = 0,
         .locals = [_]Local{.{ .name = undefined, .depth = 0 }} ** 256,
     };
 
+    var local = &p.compiler.locals[p.compiler.locals.len];
+    local.depth = 0;
+    local.name.literal = "";
 
-    // HERE
-    
+    return c;
 }
 
-pub fn compile(m: *vm.VM, source: []const u8) !chunk.Chunk {
+pub fn compile(m: *vm.VM, source: []const u8) !*chunk.Obj_Function {
     var ch = chunk.init_chunk(m.alloc);
     errdefer chunk.deinit_chunk(&ch);
 
@@ -105,13 +107,14 @@ pub fn compile(m: *vm.VM, source: []const u8) !chunk.Chunk {
         try declaration(&parser);
     }
 
-    try end_compiler(&parser);
+    const function = try end_compiler(&parser);
 
     if (parser.had_error) {
-        return error.ParserHadError;
+        return null;
+        // return error.ParserHadError;
     }
 
-    return ch;
+    return function;
 }
 
 fn declaration(p: *Parser) !void {
@@ -499,13 +502,17 @@ fn make_constant(p: *Parser, val: value.Value) !u8 {
     return @intCast(u8, constant);
 }
 
-fn end_compiler(p: *Parser) !void {
+fn end_compiler(p: *Parser) !*value.Obj_Function {
     try emit_return(p);
+    const function = p.compiler.function.?;
+
     if (config.show_debug_info) {
         if (!p.had_error) {
-            debug.disassemble_chunk(current_chunk(p).*, "code");
+            debug.disassemble_chunk(current_chunk(p).*, if (function.name.len != 0) function.name else "<script>");
         }
     }
+
+    return function;
 }
 
 fn emit_return(p: *Parser) !void {

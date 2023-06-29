@@ -9,7 +9,7 @@ export function readLine() {
     return line.split("\n")[0];
 }
 
-export function printSync(str: strng) {
+export function printSync(str: string) {
     const stdout = fs.openSync("/dev/stdout", "w", 0o666);
     fs.writeSync(stdout, str + "\n");
     fs.closeSync(stdout);
