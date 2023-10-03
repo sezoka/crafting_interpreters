@@ -1,7 +1,7 @@
 use crate::{
     chunk::{Chunk, OpCode},
     debug,
-    value::{self, Value},
+    value::{self, Value}, compiler,
 };
 
 macro_rules! binary_op {
@@ -14,6 +14,7 @@ macro_rules! binary_op {
     };
 }
 
+#[derive(Debug)]
 pub enum InterpretError {
     Runtime,
     Compile,
@@ -40,12 +41,14 @@ impl VM {
         };
     }
 
-    pub fn interpret(&mut self, ch: Chunk) -> InterpretResult {
-        self.chunk = ch;
-        self.ip = 0;
-        self.stack_top = 0;
-        self.stack = [0.0; STACK_MAX];
-        return self.run();
+    pub fn interpret(&mut self, src: &str) -> InterpretResult {
+        compiler::compile(src);
+        Ok(())
+        // self.chunk = ch;
+        // self.ip = 0;
+        // self.stack_top = 0;
+        // self.stack = [0.0; STACK_MAX];
+        // return self.run();
     }
 
     fn run(&mut self) -> InterpretResult {
