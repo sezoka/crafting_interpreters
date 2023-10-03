@@ -1,8 +1,14 @@
 use crate::value::Value;
 
+#[derive(Clone, Copy)]
 pub enum OpCode {
     Return,
     Constant(u8),
+    Negate,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
 }
 
 pub struct Chunk {
