@@ -4,6 +4,11 @@ const Value = @import("./value.zig").Value;
 pub const Op_Code = union(enum) {
     return_,
     constant: u8,
+    negate,
+    add,
+    subtract,
+    multiply,
+    divide,
 };
 
 pub const Chunk = struct {
