@@ -3,6 +3,11 @@ package main
 Op_Code :: enum {
   Return,
   Constant,
+  Negate,
+  Add,
+  Subtract,
+  Multiply,
+  Divide,
 }
 
 Chunk :: struct {

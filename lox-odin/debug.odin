@@ -2,6 +2,8 @@ package main
 
 import "core:fmt"
 
+DEBUG_ENABLED :: true
+
 disassemble_chunk :: proc(c: Chunk, name: string) {
   fmt.printf("== %s ==\n", name);
 
@@ -26,6 +28,16 @@ disassemble_instruction :: proc(c: Chunk, offset: uint) -> uint {
     return simple_instruction("OP_RETURN", offset)
   case .Constant:
     return constant_instruction("OP_CONSTANT", c, offset)
+  case .Negate:
+    return simple_instruction("OP_NEGATE", offset)
+  case .Add:
+    return simple_instruction("OP_ADD", offset)
+  case .Subtract:
+    return simple_instruction("OP_SUBTRACT", offset)
+  case .Multiply:
+    return simple_instruction("OP_MULTIPLY", offset)
+  case .Divide:
+    return simple_instruction("OP_DIVIDE", offset)
   }
   return offset + 1
 }
