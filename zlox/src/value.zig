@@ -1,16 +1,21 @@
 const std = @import("std");
-const io = @import("./io.zig");
 
-pub const Value = f32;
+pub const Value = f64;
 
-pub fn print(v: Value) void {
-    print_with_writer(v, std.io.getStdOut().writer());
+pub const Value_Array = std.ArrayList(Value);
+
+pub fn print_val(val: Value) void {
+    std.debug.print("{d}", .{val});
 }
 
-pub fn print_debug(v: Value) void {
-    print_with_writer(v, std.io.getStdErr().writer());
+pub fn create_arr(ally: std.mem.Allocator) Value_Array {
+    return Value_Array.init(ally);
 }
 
-pub fn print_with_writer(v: Value, writer: anytype) void {
-    writer.print("{d:.2}", .{v}) catch unreachable;
+pub fn write_arr(va: *Value_Array, v: Value) !void {
+    try va.append(v);
+}
+
+pub fn deinit_arr(va: Value_Array) void {
+    va.deinit();
 }

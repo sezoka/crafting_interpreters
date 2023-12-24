@@ -1,48 +1,47 @@
 const std = @import("std");
-const chunk = @import("./chunk.zig");
-const value = @import("./value.zig");
+const value = @import("value.zig");
+const chunk = @import("chunk.zig");
 const Chunk = chunk.Chunk;
 const Op_Code = chunk.Op_Code;
 
-pub const enabled = true;
-
 pub fn disassemble_chunk(ch: Chunk, name: []const u8) void {
     std.debug.print("== {s} ==\n", .{name});
+
     var offset: usize = 0;
     while (offset < ch.code.items.len) {
-        offset = disassemble_instruction(ch, offset);
+        offset += disassemble_instr(ch, offset);
     }
 }
 
-pub fn disassemble_instruction(ch: Chunk, offset: usize) usize {
+pub fn disassemble_instr(ch: Chunk, offset: usize) usize {
     std.debug.print("{d:0>4} ", .{offset});
 
     if (0 < offset and ch.lines.items[offset] == ch.lines.items[offset - 1]) {
         std.debug.print("   | ", .{});
     } else {
-        std.debug.print("{d:>4} ", .{ch.lines.items[offset]});
+        std.debug.print("{d:4} ", .{ch.lines.items[offset]});
     }
 
     const instr = ch.code.items[offset];
-    return switch (instr) {
-        .return_ => simple_instruction("OP_RETURN", offset),
-        .constant => |id| constant_instruction("OP_CONSTANT", ch, id, offset),
-        .negate => simple_instruction("OP_NEGATE", offset),
-        .add => simple_instruction("OP_ADD", offset),
-        .subtract => simple_instruction("OP_SUBTRACT", offset),
-        .multiply => simple_instruction("OP_MULTIPLY", offset),
-        .divide => simple_instruction("OP_DIVIDE", offset),
-    };
+    switch (instr) {
+        @intFromEnum(Op_Code.Constant) => return constant_instr("Constant", ch, offset),
+        @intFromEnum(Op_Code.Return) => return simple_instr("Return", offset),
+        else => {
+            std.debug.print("Unknown opcode {d}\n", .{instr});
+            return offset + 1;
+        },
+    }
 }
 
-pub fn constant_instruction(name: []const u8, ch: Chunk, constant_id: usize, offset: usize) usize {
-    std.debug.print("{s:<16} {d:>4} '", .{ name, constant_id });
-    value.print_debug(ch.constants.items[constant_id]);
+pub fn constant_instr(name: []const u8, ch: Chunk, offset: usize) usize {
+    const constant_idx = ch.code.items[offset + 1];
+    std.debug.print("{s: <16} {d:4} '", .{ name, constant_idx });
+    value.print_val(ch.constants.items[constant_idx]);
     std.debug.print("'\n", .{});
-    return offset + 1;
+    return offset + 2;
 }
 
-pub fn simple_instruction(name: []const u8, offset: usize) usize {
+pub fn simple_instr(name: []const u8, offset: usize) usize {
     std.debug.print("{s}\n", .{name});
     return offset + 1;
 }
