@@ -5,6 +5,11 @@ const Value = value.Value;
 
 pub const Op_Code = enum(u8) {
     Constant,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
     Return,
 };
 
