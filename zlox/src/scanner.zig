@@ -24,6 +24,8 @@ const token_kinds_map = std.ComptimeStringMap(Token_Kind, .{
     .{ "super", .Super },
     .{ "var", .Var },
     .{ "whlie", .While },
+    .{ "false", .False },
+    .{ "true", .True },
 });
 
 pub fn create(src: []const u8) Scanner {
@@ -139,7 +141,7 @@ fn peek(s: Scanner) u8 {
 
 fn match(s: *Scanner, expected: u8) bool {
     if (is_at_end(s.*)) return false;
-    if (s.current != expected) return false;
+    if (s.start[s.current] != expected) return false;
     s.current += 1;
     return true;
 }

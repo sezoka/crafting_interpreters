@@ -60,15 +60,21 @@ pub fn interpret(vm: *VM, source: []const u8) Interpret_Result {
 fn run(vm: *VM) Interpret_Result {
     const util = struct {
         pub fn binary_op(v: *VM, op: Op_Code) !void {
-            const b = stack_pop(v);
-            const a = stack_pop(v);
-            try switch (op) {
-                .Add => stack_push(v, a + b),
-                .Subtract => stack_push(v, a - b),
-                .Multiply => stack_push(v, a * b),
-                .Divide => stack_push(v, a / b),
+            if (!value.is_number(peek(v, 0)) or !value.is_number(peek(v, 1))) {
+                runtime_error(v, "Operands must be numbers.", .{});
+                return error.Runtime;
+            }
+            const b = value.as_float(stack_pop(v));
+            const a = value.as_float(stack_pop(v));
+            try stack_push(v, switch (op) {
+                .Add => value.from_float(a + b),
+                .Subtract => value.from_float(a - b),
+                .Multiply => value.from_float(a * b),
+                .Greater => value.from_bool(a > b),
+                .Less => value.from_bool(a < b),
+                .Divide => value.from_float(a / b),
                 else => unreachable,
-            };
+            });
         }
     };
 
@@ -83,17 +89,35 @@ fn run(vm: *VM) Interpret_Result {
             std.debug.print("\n", .{});
             _ = debug.disassemble_instr(vm.chunk.*, @intFromPtr(vm.ip) - @intFromPtr(vm.chunk.code.items.ptr));
         }
+
         const instr = read_byte(vm);
         try switch (instr) {
             @intFromEnum(Op_Code.Constant) => {
                 const constant = read_constant(vm);
                 try stack_push(vm, constant);
             },
-            @intFromEnum(Op_Code.Negate) => stack_push(vm, -stack_pop(vm)),
+            @intFromEnum(Op_Code.Negate) => {
+                if (!value.is_number(peek(vm, 0))) {
+                    runtime_error(vm, "Operand must be a number", .{});
+                    return error.Runtime;
+                }
+                try stack_push(vm, value.from_float(-value.as_float(stack_pop(vm))));
+            },
+            @intFromEnum(Op_Code.Nil) => stack_push(vm, .nil),
+            @intFromEnum(Op_Code.True) => stack_push(vm, value.from_bool(true)),
+            @intFromEnum(Op_Code.False) => stack_push(vm, value.from_bool(false)),
+            @intFromEnum(Op_Code.Equal) => {
+                const b = stack_pop(vm);
+                const a = stack_pop(vm);
+                try stack_push(vm, value.from_bool(value.equal(a, b)));
+            },
+            @intFromEnum(Op_Code.Greater) => util.binary_op(vm, .Greater),
+            @intFromEnum(Op_Code.Less) => util.binary_op(vm, .Less),
             @intFromEnum(Op_Code.Add) => util.binary_op(vm, .Add),
             @intFromEnum(Op_Code.Subtract) => util.binary_op(vm, .Subtract),
             @intFromEnum(Op_Code.Multiply) => util.binary_op(vm, .Multiply),
             @intFromEnum(Op_Code.Divide) => util.binary_op(vm, .Divide),
+            @intFromEnum(Op_Code.Not) => stack_push(vm, value.from_bool(is_falsey(stack_pop(vm)))),
             @intFromEnum(Op_Code.Return) => {
                 value.print_val(stack_pop(vm));
                 std.debug.print("\n", .{});
@@ -103,6 +127,27 @@ fn run(vm: *VM) Interpret_Result {
             else => unreachable,
         };
     }
+}
+
+fn is_falsey(val: Value) bool {
+    return value.is_nil(val) or (value.is_bool(val) and !value.as_bool(val));
+}
+
+fn runtime_error(vm: *VM, comptime fmt: []const u8, args: anytype) void {
+    std.debug.print(fmt ++ "\n", args);
+
+    const instr = @intFromPtr(vm.ip) - @intFromPtr(vm.chunk.code.items.ptr);
+    const line = vm.chunk.lines.items[instr];
+    std.debug.print("[line {d}] in script\n", .{line});
+    reset_stack(vm);
+}
+
+fn reset_stack(vm: *VM) void {
+    vm.stack.clearRetainingCapacity();
+}
+
+fn peek(vm: *VM, dist: usize) Value {
+    return vm.stack.items[vm.stack.items.len - dist - 1];
 }
 
 fn read_constant(vm: *VM) Value {

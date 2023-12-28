@@ -74,8 +74,17 @@ fn expression(c: *Compiler) !void {
 }
 
 fn number(c: *Compiler) Parse_Rule_Result {
-    const val = std.fmt.parseFloat(Value, c.parser.previous.lexeme) catch unreachable;
-    try emit_constant(c, val);
+    const val = std.fmt.parseFloat(f64, c.parser.previous.lexeme) catch unreachable;
+    try emit_constant(c, value.from_float(val));
+}
+
+fn literal(c: *Compiler) Parse_Rule_Result {
+    try switch (c.parser.previous.kind) {
+        .False => emit_byte(c, to_byte(.False)),
+        .Nil => emit_byte(c, to_byte(.Nil)),
+        .True => emit_byte(c, to_byte(.True)),
+        else => return,
+    };
 }
 
 fn grouping(c: *Compiler) Parse_Rule_Result {
@@ -88,6 +97,7 @@ fn unary(c: *Compiler) Parse_Rule_Result {
     try parse_precedence(c, .Unary);
 
     switch (op_kind) {
+        .Bang => try emit_byte(c, to_byte(.Not)),
         .Minus => try emit_byte(c, to_byte(.Negate)),
         else => unreachable,
     }
@@ -99,6 +109,12 @@ fn binary(c: *Compiler) Parse_Rule_Result {
     try parse_precedence(c, @enumFromInt(@intFromEnum(rule.precedence) + 1));
 
     try switch (op_kind) {
+        .Bang_Equal => emit_bytes(c, to_byte(.Equal), to_byte(.Not)),
+        .Equal_Equal => emit_byte(c, to_byte(.Equal)),
+        .Greater => emit_byte(c, to_byte(.Greater)),
+        .Greater_Equal => emit_bytes(c, to_byte(.Less), to_byte(.Not)),
+        .Less => emit_byte(c, to_byte(.Less)),
+        .Less_Equal => emit_bytes(c, to_byte(.Greater), to_byte(.Not)),
         .Plus => emit_byte(c, to_byte(.Add)),
         .Minus => emit_byte(c, to_byte(.Subtract)),
         .Star => emit_byte(c, to_byte(.Multiply)),
@@ -225,31 +241,31 @@ const rules: []Parse_Rule = blk: {
     rls[@intFromEnum(Token_Kind.Semicolon)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Slash)] = parse_rule(null, binary, .Factor);
     rls[@intFromEnum(Token_Kind.Star)] = parse_rule(null, binary, .Factor);
-    rls[@intFromEnum(Token_Kind.Bang)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.Bang_Equal)] = parse_rule(null, null, .None);
+    rls[@intFromEnum(Token_Kind.Bang)] = parse_rule(unary, null, .None);
+    rls[@intFromEnum(Token_Kind.Bang_Equal)] = parse_rule(null, binary, .Equality);
     rls[@intFromEnum(Token_Kind.Equal)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.Equal_Equal)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.Greater)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.Greater_Equal)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.Less)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.Less_Equal)] = parse_rule(null, null, .None);
+    rls[@intFromEnum(Token_Kind.Equal_Equal)] = parse_rule(null, binary, .Equality);
+    rls[@intFromEnum(Token_Kind.Greater)] = parse_rule(null, binary, .Comparison);
+    rls[@intFromEnum(Token_Kind.Greater_Equal)] = parse_rule(null, binary, .Comparison);
+    rls[@intFromEnum(Token_Kind.Less)] = parse_rule(null, binary, .Comparison);
+    rls[@intFromEnum(Token_Kind.Less_Equal)] = parse_rule(null, binary, .Comparison);
     rls[@intFromEnum(Token_Kind.Identifier)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.String)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Number)] = parse_rule(number, null, .None);
     rls[@intFromEnum(Token_Kind.And)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Class)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Else)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.False)] = parse_rule(null, null, .None);
+    rls[@intFromEnum(Token_Kind.False)] = parse_rule(literal, null, .None);
     rls[@intFromEnum(Token_Kind.For)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Fun)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.If)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.Nil)] = parse_rule(null, null, .None);
+    rls[@intFromEnum(Token_Kind.Nil)] = parse_rule(literal, null, .None);
     rls[@intFromEnum(Token_Kind.Or)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Print)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Return)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Super)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.This)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.True)] = parse_rule(null, null, .None);
+    rls[@intFromEnum(Token_Kind.True)] = parse_rule(literal, null, .None);
     rls[@intFromEnum(Token_Kind.Var)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.While)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Error)] = parse_rule(null, null, .None);

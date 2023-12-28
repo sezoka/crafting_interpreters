@@ -27,11 +27,18 @@ pub fn disassemble_instr(ch: Chunk, offset: usize) usize {
     const instr = ch.code.items[offset];
     switch (instr) {
         @intFromEnum(Op_Code.Constant) => return constant_instr("Constant", ch, offset),
+        @intFromEnum(Op_Code.Nil) => return simple_instr("Nil", offset),
+        @intFromEnum(Op_Code.True) => return simple_instr("True", offset),
+        @intFromEnum(Op_Code.False) => return simple_instr("False", offset),
+        @intFromEnum(Op_Code.Equal) => return simple_instr("Equal", offset),
+        @intFromEnum(Op_Code.Greater) => return simple_instr("Greater", offset),
+        @intFromEnum(Op_Code.Less) => return simple_instr("Less", offset),
         @intFromEnum(Op_Code.Negate) => return simple_instr("Negate", offset),
         @intFromEnum(Op_Code.Add) => return simple_instr("Add", offset),
         @intFromEnum(Op_Code.Subtract) => return simple_instr("Subtract", offset),
         @intFromEnum(Op_Code.Multiply) => return simple_instr("Multiply", offset),
         @intFromEnum(Op_Code.Divide) => return simple_instr("Divide", offset),
+        @intFromEnum(Op_Code.Not) => return simple_instr("Not", offset),
         @intFromEnum(Op_Code.Return) => return simple_instr("Return", offset),
         else => {
             std.debug.print("Unknown opcode {d}\n", .{instr});
