@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const chunk = @import("chunk.zig");
+const compiler = @import("compiler.zig");
 const debug = @import("debug.zig");
 const value = @import("value.zig");
 
@@ -12,9 +13,8 @@ const Interpret_Error = error{ Runtime, Comptime, OutOfMemory };
 
 const Interpret_Result = Interpret_Error!void;
 
-// const STACK_MAX = 256;
-
-const VM = struct {
+pub const VM = struct {
+    ally: std.mem.Allocator,
     chunk: *Chunk,
     ip: [*]u8,
     stack: std.ArrayList(Value),
@@ -25,6 +25,7 @@ pub fn create(ally: std.mem.Allocator) VM {
         .chunk = undefined,
         .ip = undefined,
         .stack = std.ArrayList(Value).init(ally),
+        .ally = ally,
     };
 }
 
@@ -40,10 +41,20 @@ fn stack_pop(vm: *VM) Value {
     return vm.stack.pop();
 }
 
-pub fn interpret(vm: *VM, ch: *Chunk) Interpret_Result {
-    vm.chunk = ch;
-    vm.ip = @ptrCast(vm.chunk.code.items);
-    return run(vm);
+pub fn interpret(vm: *VM, source: []const u8) Interpret_Result {
+    var ch = chunk.create(vm.ally);
+    defer chunk.deinit(ch);
+
+    if (!try compiler.compile(source, &ch)) {
+        return Interpret_Error.Comptime;
+    }
+
+    vm.chunk = &ch;
+    vm.ip = vm.chunk.code.items.ptr;
+
+    const result = run(vm);
+
+    return result;
 }
 
 fn run(vm: *VM) Interpret_Result {
