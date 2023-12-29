@@ -10,7 +10,7 @@ pub fn main() !void {
     const ally = gpa.allocator();
 
     var vm_inst = vm.create(ally);
-    defer vm.deinit(vm_inst);
+    defer vm.deinit(&vm_inst);
 
     var args = try std.process.argsWithAllocator(ally);
     defer args.deinit();

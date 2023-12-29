@@ -4,7 +4,10 @@ const chunk = @import("chunk.zig");
 const compiler = @import("compiler.zig");
 const debug = @import("debug.zig");
 const value = @import("value.zig");
+const object = @import("object.zig");
 
+const Obj = object.Obj;
+const Obj_String = object.Obj_String;
 const Chunk = chunk.Chunk;
 const Value = value.Value;
 const Op_Code = chunk.Op_Code;
@@ -18,6 +21,7 @@ pub const VM = struct {
     chunk: *Chunk,
     ip: [*]u8,
     stack: std.ArrayList(Value),
+    objects: ?*Obj,
 };
 
 pub fn create(ally: std.mem.Allocator) VM {
@@ -25,12 +29,33 @@ pub fn create(ally: std.mem.Allocator) VM {
         .chunk = undefined,
         .ip = undefined,
         .stack = std.ArrayList(Value).init(ally),
+        .objects = null,
         .ally = ally,
     };
 }
 
-pub fn deinit(vm: VM) void {
+pub fn deinit(vm: *VM) void {
     vm.stack.deinit();
+    free_objects(vm);
+}
+
+fn free_objects(vm: *VM) void {
+    var obj = vm.objects;
+    while (obj != null) {
+        const next = obj.?.next;
+        free_object(vm, obj.?);
+        obj = next;
+    }
+}
+
+fn free_object(vm: *VM, obj: *Obj) void {
+    switch (obj.kind) {
+        .string => {
+            const string = @as(*Obj_String, @alignCast(@ptrCast(obj)));
+            vm.ally.free(string.chars);
+            vm.ally.destroy(string);
+        },
+    }
 }
 
 fn stack_push(vm: *VM, val: Value) !void {
@@ -45,7 +70,7 @@ pub fn interpret(vm: *VM, source: []const u8) Interpret_Result {
     var ch = chunk.create(vm.ally);
     defer chunk.deinit(ch);
 
-    if (!try compiler.compile(source, &ch)) {
+    if (!try compiler.compile(vm, source, &ch)) {
         return Interpret_Error.Comptime;
     }
 
@@ -113,7 +138,18 @@ fn run(vm: *VM) Interpret_Result {
             },
             @intFromEnum(Op_Code.Greater) => util.binary_op(vm, .Greater),
             @intFromEnum(Op_Code.Less) => util.binary_op(vm, .Less),
-            @intFromEnum(Op_Code.Add) => util.binary_op(vm, .Add),
+            @intFromEnum(Op_Code.Add) => {
+                if (object.is_string(peek(vm, 0)) and object.is_string(peek(vm, 1))) {
+                    try concatenate(vm);
+                } else if (value.is_number(peek(vm, 0)) and value.is_number(peek(vm, 1))) {
+                    const b = value.as_float(stack_pop(vm));
+                    const a = value.as_float(stack_pop(vm));
+                    try stack_push(vm, value.from_float(a + b));
+                } else {
+                    runtime_error(vm, "Operands must be two numbers or 2 strings.", .{});
+                    return error.Runtime;
+                }
+            },
             @intFromEnum(Op_Code.Subtract) => util.binary_op(vm, .Subtract),
             @intFromEnum(Op_Code.Multiply) => util.binary_op(vm, .Multiply),
             @intFromEnum(Op_Code.Divide) => util.binary_op(vm, .Divide),
@@ -127,6 +163,15 @@ fn run(vm: *VM) Interpret_Result {
             else => unreachable,
         };
     }
+}
+
+fn concatenate(vm: *VM) !void {
+    const b = object.as_string(stack_pop(vm));
+    const a = object.as_string(stack_pop(vm));
+    const chars = try std.mem.concat(vm.ally, u8, &[2][]const u8{ a.chars, b.chars });
+
+    const result = try object.take_string(vm, chars);
+    try stack_push(vm, value.from_obj(result));
 }
 
 fn is_falsey(val: Value) bool {

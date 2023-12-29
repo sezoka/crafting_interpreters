@@ -2,7 +2,11 @@ const std = @import("std");
 const scanner = @import("scanner.zig");
 const chunk = @import("chunk.zig");
 const value = @import("value.zig");
+const object = @import("object.zig");
 const debug = @import("debug.zig");
+const vm = @import("vm.zig");
+
+const VM = vm.VM;
 const Chunk = chunk.Chunk;
 const Op_Code = chunk.Op_Code;
 const Token = scanner.Token;
@@ -21,6 +25,7 @@ pub const Compiler = struct {
     chunk: *Chunk,
     had_error: bool,
     panic_mode: bool,
+    vm: *VM,
 };
 
 const Parse_Rule = struct {
@@ -49,7 +54,7 @@ const Precedence = enum {
     Primary,
 };
 
-pub fn compile(source: []const u8, ch: *Chunk) !bool {
+pub fn compile(v: *VM, source: []const u8, ch: *Chunk) !bool {
     var compiler = Compiler{
         .parser = .{
             .current = undefined,
@@ -59,6 +64,7 @@ pub fn compile(source: []const u8, ch: *Chunk) !bool {
         .chunk = ch,
         .had_error = false,
         .panic_mode = false,
+        .vm = v,
     };
 
     advance(&compiler);
@@ -101,6 +107,10 @@ fn unary(c: *Compiler) Parse_Rule_Result {
         .Minus => try emit_byte(c, to_byte(.Negate)),
         else => unreachable,
     }
+}
+
+fn string(c: *Compiler) Parse_Rule_Result {
+    try emit_constant(c, value.from_obj(try object.copy_string(c.vm, c.parser.previous.lexeme[1 .. c.parser.previous.lexeme.len - 1])));
 }
 
 fn binary(c: *Compiler) Parse_Rule_Result {
@@ -250,7 +260,7 @@ const rules: []Parse_Rule = blk: {
     rls[@intFromEnum(Token_Kind.Less)] = parse_rule(null, binary, .Comparison);
     rls[@intFromEnum(Token_Kind.Less_Equal)] = parse_rule(null, binary, .Comparison);
     rls[@intFromEnum(Token_Kind.Identifier)] = parse_rule(null, null, .None);
-    rls[@intFromEnum(Token_Kind.String)] = parse_rule(null, null, .None);
+    rls[@intFromEnum(Token_Kind.String)] = parse_rule(string, null, .None);
     rls[@intFromEnum(Token_Kind.Number)] = parse_rule(number, null, .None);
     rls[@intFromEnum(Token_Kind.And)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Class)] = parse_rule(null, null, .None);
