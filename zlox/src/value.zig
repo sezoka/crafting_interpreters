@@ -1,5 +1,6 @@
 const std = @import("std");
 const object = @import("object.zig");
+const value = @import("value.zig");
 const Obj_Kind = object.Obj_Kind;
 const Obj = object.Obj;
 
@@ -68,9 +69,9 @@ pub fn equal(a: Value, b: Value) bool {
         .bool => |a_bool| return a_bool == b.bool,
         .nil => return true,
         .obj => {
-            const a_str = object.as_string_slice(a);
-            const b_str = object.as_string_slice(b);
-            return a_str.len == b_str.len and std.mem.eql(u8, a_str, b_str);
+            const a_str = value.as_obj(a);
+            const b_str = value.as_obj(b);
+            return a_str == b_str;
         },
     }
 }

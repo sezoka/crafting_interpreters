@@ -3,14 +3,16 @@ const std = @import("std");
 const chunk = @import("chunk.zig");
 const compiler = @import("compiler.zig");
 const debug = @import("debug.zig");
-const value = @import("value.zig");
 const object = @import("object.zig");
+const table = @import("table.zig");
+const value = @import("value.zig");
 
+const Chunk = chunk.Chunk;
 const Obj = object.Obj;
 const Obj_String = object.Obj_String;
-const Chunk = chunk.Chunk;
-const Value = value.Value;
+const Obj_String_Set = table.Obj_String_Set;
 const Op_Code = chunk.Op_Code;
+const Value = value.Value;
 
 const Interpret_Error = error{ Runtime, Comptime, OutOfMemory };
 
@@ -22,6 +24,7 @@ pub const VM = struct {
     ip: [*]u8,
     stack: std.ArrayList(Value),
     objects: ?*Obj,
+    strings: Obj_String_Set,
 };
 
 pub fn create(ally: std.mem.Allocator) VM {
@@ -31,11 +34,13 @@ pub fn create(ally: std.mem.Allocator) VM {
         .stack = std.ArrayList(Value).init(ally),
         .objects = null,
         .ally = ally,
+        .strings = Obj_String_Set.init(ally),
     };
 }
 
 pub fn deinit(vm: *VM) void {
     vm.stack.deinit();
+    vm.strings.deinit();
     free_objects(vm);
 }
 

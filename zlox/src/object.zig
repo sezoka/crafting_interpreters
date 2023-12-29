@@ -1,6 +1,7 @@
 const std = @import("std");
 const value = @import("value.zig");
 const vm = @import("vm.zig");
+const table = @import("table.zig");
 
 const VM = vm.VM;
 const Value = value.Value;
@@ -36,6 +37,8 @@ pub fn as_string_slice(val: Value) []const u8 {
 }
 
 pub fn copy_string(v: *VM, chars: []const u8) !*Obj_String {
+    const maybe_interned = table.get_by_slice(v.strings, chars);
+    if (maybe_interned) |interned| return interned;
     const allocated_chars = try v.ally.dupe(u8, chars);
     return allocate_string(v, allocated_chars);
 }
@@ -43,6 +46,7 @@ pub fn copy_string(v: *VM, chars: []const u8) !*Obj_String {
 pub fn allocate_string(v: *VM, chars: []const u8) !*Obj_String {
     var string = try allocate_obj(v, Obj_String, Obj_Kind.string);
     string.chars = chars;
+    try v.strings.put(string, {});
     return string;
 }
 
@@ -68,5 +72,10 @@ pub fn print_obj(val: Value) void {
 }
 
 pub fn take_string(v: *VM, chars: []const u8) !*Obj_String {
+    const maybe_interned = table.get_by_slice(v.strings, chars);
+    if (maybe_interned) |interned| {
+        v.ally.free(chars);
+        return interned;
+    }
     return allocate_string(v, chars);
 }
