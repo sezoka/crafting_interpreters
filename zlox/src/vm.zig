@@ -114,33 +114,32 @@ fn run(vm: *VM) Interpret_Result {
 
     while (true) {
         if (false) {
+            std.debug.print("COMMAND:\n", .{});
             std.debug.print("          ", .{});
-            std.debug.print("\nCOMMAND:\n", .{});
             _ = debug.disassemble_instr(vm.chunk.*, @intFromPtr(vm.ip) - @intFromPtr(vm.chunk.code.items.ptr));
-
             std.debug.print("\nSTACK:\n", .{});
             for (vm.stack.items) |slot| {
                 std.debug.print("[ ", .{});
                 value.print_val(slot);
                 std.debug.print(" ]", .{});
             }
-            std.debug.print("\n", .{});
+            // std.debug.print("\n", .{});
 
-            std.debug.print("\nGLOBALS:\n", .{});
-            var iter = vm.globals.valueIterator();
-            while (iter.next()) |slot| {
-                std.debug.print("[ ", .{});
-                value.print_val(slot.*);
-                std.debug.print(" ]", .{});
-            }
-            std.debug.print("\n", .{});
+            // std.debug.print("\nGLOBALS:\n", .{});
+            // var iter = vm.globals.valueIterator();
+            // while (iter.next()) |slot| {
+            //     std.debug.print("[ ", .{});
+            //     value.print_val(slot.*);
+            //     std.debug.print(" ]", .{});
+            // }
+            // std.debug.print("\n", .{});
 
-            std.debug.print("\nCONSTANTS:\n", .{});
-            for (vm.chunk.constants.items) |slot| {
-                std.debug.print("[ ", .{});
-                value.print_val(slot);
-                std.debug.print(" ]", .{});
-            }
+            // std.debug.print("\nCONSTANTS:\n", .{});
+            // for (vm.chunk.constants.items) |slot| {
+            //     std.debug.print("[ ", .{});
+            //     value.print_val(slot);
+            //     std.debug.print(" ]", .{});
+            // }
 
             std.debug.print("\n-----------\n", .{});
         }
@@ -163,6 +162,14 @@ fn run(vm: *VM) Interpret_Result {
             @intFromEnum(Op_Code.False) => stack_push(vm, value.from_bool(false)),
             @intFromEnum(Op_Code.Pop) => {
                 _ = stack_pop(vm);
+            },
+            @intFromEnum(Op_Code.Get_Local) => {
+                const slot = read_byte(vm);
+                try stack_push(vm, vm.stack.items[slot]);
+            },
+            @intFromEnum(Op_Code.Set_Local) => {
+                const slot = read_byte(vm);
+                vm.stack.items[slot] = peek(vm, 0);
             },
             @intFromEnum(Op_Code.Get_Global) => {
                 const name = try read_string(vm);

@@ -30,7 +30,8 @@ pub fn disassemble_instr(ch: Chunk, offset: usize) usize {
         @intFromEnum(Op_Code.Nil) => return simple_instr("Nil", offset),
         @intFromEnum(Op_Code.True) => return simple_instr("True", offset),
         @intFromEnum(Op_Code.False) => return simple_instr("False", offset),
-        @intFromEnum(Op_Code.Get_Global) => return constant_instr("Get_Global", ch, offset),
+        @intFromEnum(Op_Code.Get_Local) => return byte_instr("Get_Local", ch, offset),
+        @intFromEnum(Op_Code.Set_Local) => return byte_instr("Set_Local", ch, offset),
         @intFromEnum(Op_Code.Define_Global) => return constant_instr("Define_Global", ch, offset),
         @intFromEnum(Op_Code.Set_Global) => return constant_instr("Set_Global", ch, offset),
         @intFromEnum(Op_Code.Equal) => return simple_instr("Equal", offset),
@@ -50,6 +51,12 @@ pub fn disassemble_instr(ch: Chunk, offset: usize) usize {
             return offset + 1;
         },
     }
+}
+
+pub fn byte_instr(name: []const u8, ch: Chunk, offset: usize) usize {
+    const slot = ch.code.items[offset + 1];
+    std.debug.print("{s:<16} {d:4}\n", .{ name, slot });
+    return offset + 2;
 }
 
 pub fn constant_instr(name: []const u8, ch: Chunk, offset: usize) usize {

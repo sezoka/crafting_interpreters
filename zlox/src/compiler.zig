@@ -19,13 +19,25 @@ pub const Parser = struct {
     previous: Token,
 };
 
-pub const Compiler = struct {
+pub const State = struct {
     parser: Parser,
     scaner: Scanner,
     chunk: *Chunk,
     had_error: bool,
     panic_mode: bool,
+    current: Compiler,
     vm: *VM,
+};
+
+const Compiler = struct {
+    locals: [std.math.maxInt(u8) + 1]Local,
+    local_cnt: i32,
+    score_depth: i32,
+};
+
+const Local = struct {
+    name: Token,
+    depth: i32,
 };
 
 const Parse_Rule = struct {
@@ -34,7 +46,7 @@ const Parse_Rule = struct {
     precedence: Precedence,
 };
 
-const Parse_Fn = ?*const fn (c: *Compiler, can_assign: bool) Parse_Rule_Result;
+const Parse_Fn = ?*const fn (s: *State, can_assign: bool) Parse_Rule_Result;
 
 const Parse_Rule_Error = error{OutOfMemory};
 
@@ -55,7 +67,7 @@ const Precedence = enum {
 };
 
 pub fn compile(v: *VM, source: []const u8, ch: *Chunk) !bool {
-    var compiler = Compiler{
+    var state = State{
         .parser = .{
             .current = undefined,
             .previous = undefined,
@@ -65,195 +77,302 @@ pub fn compile(v: *VM, source: []const u8, ch: *Chunk) !bool {
         .had_error = false,
         .panic_mode = false,
         .vm = v,
+        .current = create_compiler(),
     };
 
-    advance(&compiler);
+    advance(&state);
 
-    while (!match(&compiler, .Eof)) {
-        try declaration(&compiler);
+    while (!match(&state, .Eof)) {
+        try declaration(&state);
     }
 
-    try end_compiler(&compiler);
-    return !compiler.had_error;
+    try end_compiler(&state);
+    return !state.had_error;
 }
 
-fn declaration(c: *Compiler) !void {
-    if (match(c, .Var)) {
-        try var_decl(c);
+fn create_compiler() Compiler {
+    return .{
+        .local_cnt = 0,
+        .score_depth = 0,
+        .locals = undefined,
+    };
+}
+
+fn declaration(s: *State) error{OutOfMemory}!void {
+    if (match(s, .Var)) {
+        try var_decl(s);
     } else {
-        try statement(c);
+        try statement(s);
     }
 
-    if (c.panic_mode) try synchronize(c);
+    if (s.panic_mode) try synchronize(s);
 }
 
-fn var_decl(c: *Compiler) !void {
-    const global = try parse_variable(c, "Expect variable name.");
+fn var_decl(s: *State) !void {
+    const global = try parse_variable(s, "Expect variable name.");
 
-    if (match(c, .Equal)) {
-        try expression(c);
+    if (match(s, .Equal)) {
+        try expression(s);
     } else {
-        try emit_byte(c, to_byte(.Nil));
+        try emit_byte(s, to_byte(.Nil));
     }
-    consume(c, .Semicolon, "Expect ';' after variable declaration.");
+    consume(s, .Semicolon, "Expect ';' after variable declaration.");
 
-    try define_variable(c, global);
+    try define_variable(s, global);
 }
 
-fn parse_variable(c: *Compiler, error_message: []const u8) !u8 {
-    consume(c, .Identifier, error_message);
-    return identifier_constant(c, c.parser.previous);
+fn parse_variable(s: *State, error_message: []const u8) !u8 {
+    consume(s, .Identifier, error_message);
+
+    try declare_variable(s);
+    if (0 < s.current.score_depth) return 0;
+
+    return identifier_constant(s, s.parser.previous);
 }
 
-fn identifier_constant(c: *Compiler, name: Token) !u8 {
-    return try make_constant(c, value.from_obj(try object.copy_string(c.vm, name.lexeme)));
+fn identifier_constant(s: *State, name: Token) !u8 {
+    return try make_constant(s, value.from_obj(try object.copy_string(s.vm, name.lexeme)));
 }
 
-fn define_variable(c: *Compiler, global: u8) !void {
-    try emit_bytes(c, to_byte(.Define_Global), global);
+fn define_variable(s: *State, global: u8) !void {
+    if (0 < s.current.score_depth) {
+        mark_initialized(s);
+        return;
+    }
+    try emit_bytes(s, to_byte(.Define_Global), global);
 }
 
-fn synchronize(c: *Compiler) !void {
-    c.panic_mode = false;
+fn mark_initialized(s: *State) void {
+    s.current.locals[@intCast(s.current.local_cnt - 1)].depth = s.current.score_depth;
+}
 
-    while (c.parser.current.kind != .Eof) {
-        if (c.parser.previous.kind == .Semicolon) return;
-        switch (c.parser.current.kind) {
+fn declare_variable(s: *State) !void {
+    if (s.current.score_depth == 0) return;
+
+    const name = &s.parser.previous;
+
+    var i = s.current.local_cnt - 1;
+    while (0 <= i) : (i -= 1) {
+        var local = &s.current.locals[@intCast(i)];
+        if (local.depth != -1 and local.depth < s.current.score_depth) {
+            break;
+        }
+
+        if (identifiers_equal(name, &local.name)) {
+            error_at_prev(s, "Already a variable with this name in this scope.");
+        }
+    }
+
+    add_local(s, name.*);
+}
+
+fn identifiers_equal(a: *const Token, b: *const Token) bool {
+    if (a.lexeme.len != b.lexeme.len) return false;
+    return std.mem.eql(u8, a.lexeme, b.lexeme);
+}
+
+fn add_local(s: *State, name: Token) void {
+    if (s.current.local_cnt == std.math.maxInt(u8)) {
+        error_at_prev(s, "Too many local variables in function.");
+        return;
+    }
+
+    var local = &s.current.locals[@intCast(s.current.local_cnt)];
+    s.current.local_cnt += 1;
+    local.name = name;
+    local.depth = -1;
+}
+
+fn synchronize(s: *State) !void {
+    s.panic_mode = false;
+
+    while (s.parser.current.kind != .Eof) {
+        if (s.parser.previous.kind == .Semicolon) return;
+        switch (s.parser.current.kind) {
             .Class, .Fun, .Var, .For, .If, .While, .Print, .Return => return,
             else => {},
         }
-        advance(c);
+        advance(s);
     }
 }
 
-fn statement(c: *Compiler) !void {
-    if (match(c, .Print)) {
-        try print_stmt(c);
+fn statement(s: *State) !void {
+    if (match(s, .Print)) {
+        try print_stmt(s);
+    } else if (match(s, .Left_Brace)) {
+        try begin_scope(s);
+        try block(s);
+        try end_scope(s);
     } else {
-        try expr_stmt(c);
+        try expr_stmt(s);
     }
 }
 
-fn expr_stmt(c: *Compiler) !void {
-    try expression(c);
-    consume(c, .Semicolon, "Expect ';' after expression.");
-    try emit_byte(c, to_byte(.Pop));
+fn block(s: *State) !void {
+    while (!check(s, .Right_Brace) and !check(s, .Eof)) {
+        try declaration(s);
+    }
+
+    consume(s, .Right_Brace, "Expect '}}' after block.");
 }
 
-fn match(c: *Compiler, kind: Token_Kind) bool {
-    if (!check(c, kind)) return false;
-    advance(c);
+fn begin_scope(s: *State) !void {
+    s.current.score_depth += 1;
+}
+
+fn end_scope(s: *State) !void {
+    s.current.score_depth -= 1;
+
+    while ((0 < s.current.local_cnt) and
+        (s.current.score_depth < s.current.locals[@intCast(s.current.local_cnt - 1)].depth))
+    {
+        try emit_byte(s, to_byte(.Pop));
+        s.current.local_cnt -= 1;
+    }
+}
+
+fn expr_stmt(s: *State) !void {
+    try expression(s);
+    consume(s, .Semicolon, "Expect ';' after expression.");
+    try emit_byte(s, to_byte(.Pop));
+}
+
+fn match(s: *State, kind: Token_Kind) bool {
+    if (!check(s, kind)) return false;
+    advance(s);
     return true;
 }
 
-fn check(c: *Compiler, kind: Token_Kind) bool {
-    return c.parser.current.kind == kind;
+fn check(s: *State, kind: Token_Kind) bool {
+    return s.parser.current.kind == kind;
 }
 
-fn print_stmt(c: *Compiler) !void {
-    try expression(c);
-    consume(c, .Semicolon, "Expect ';' after value.");
-    try emit_byte(c, to_byte(.Print));
+fn print_stmt(s: *State) !void {
+    try expression(s);
+    consume(s, .Semicolon, "Expect ';' after value.");
+    try emit_byte(s, to_byte(.Print));
 }
 
-fn expression(c: *Compiler) !void {
-    try parse_precedence(c, .Assignment);
+fn expression(s: *State) !void {
+    try parse_precedence(s, .Assignment);
 }
 
-fn number(c: *Compiler, can_assign: bool) Parse_Rule_Result {
+fn number(s: *State, can_assign: bool) Parse_Rule_Result {
     _ = can_assign;
-    const val = std.fmt.parseFloat(f64, c.parser.previous.lexeme) catch unreachable;
-    try emit_constant(c, value.from_float(val));
+    const val = std.fmt.parseFloat(f64, s.parser.previous.lexeme) catch unreachable;
+    try emit_constant(s, value.from_float(val));
 }
 
-fn literal(c: *Compiler, can_assign: bool) Parse_Rule_Result {
+fn literal(s: *State, can_assign: bool) Parse_Rule_Result {
     _ = can_assign;
-    try switch (c.parser.previous.kind) {
-        .False => emit_byte(c, to_byte(.False)),
-        .Nil => emit_byte(c, to_byte(.Nil)),
-        .True => emit_byte(c, to_byte(.True)),
+    try switch (s.parser.previous.kind) {
+        .False => emit_byte(s, to_byte(.False)),
+        .Nil => emit_byte(s, to_byte(.Nil)),
+        .True => emit_byte(s, to_byte(.True)),
         else => return,
     };
 }
 
-fn grouping(c: *Compiler, can_assign: bool) Parse_Rule_Result {
+fn grouping(s: *State, can_assign: bool) Parse_Rule_Result {
     _ = can_assign;
-    try expression(c);
-    consume(c, .Right_Paren, "Expect ')' after expression.");
+    try expression(s);
+    consume(s, .Right_Paren, "Expect ')' after expression.");
 }
 
-fn unary(c: *Compiler, can_assign: bool) Parse_Rule_Result {
+fn unary(s: *State, can_assign: bool) Parse_Rule_Result {
     _ = can_assign;
-    const op_kind = c.parser.previous.kind;
-    try parse_precedence(c, .Unary);
+    const op_kind = s.parser.previous.kind;
+    try parse_precedence(s, .Unary);
 
     switch (op_kind) {
-        .Bang => try emit_byte(c, to_byte(.Not)),
-        .Minus => try emit_byte(c, to_byte(.Negate)),
+        .Bang => try emit_byte(s, to_byte(.Not)),
+        .Minus => try emit_byte(s, to_byte(.Negate)),
         else => unreachable,
     }
 }
 
-fn string(c: *Compiler, can_assign: bool) Parse_Rule_Result {
+fn string(s: *State, can_assign: bool) Parse_Rule_Result {
     _ = can_assign;
-    try emit_constant(c, value.from_obj(try object.copy_string(c.vm, c.parser.previous.lexeme[1 .. c.parser.previous.lexeme.len - 1])));
+    try emit_constant(s, value.from_obj(try object.copy_string(s.vm, s.parser.previous.lexeme[1 .. s.parser.previous.lexeme.len - 1])));
 }
 
-fn variable(c: *Compiler, can_assign: bool) Parse_Rule_Result {
-    try named_variable(c, c.parser.previous, can_assign);
+fn variable(s: *State, can_assign: bool) Parse_Rule_Result {
+    try named_variable(s, s.parser.previous, can_assign);
 }
 
-fn named_variable(c: *Compiler, name: Token, can_assign: bool) Parse_Rule_Result {
-    const arg = try identifier_constant(c, name);
+fn named_variable(s: *State, name: Token, can_assign: bool) Parse_Rule_Result {
+    var get_op = Op_Code.Get_Local;
+    var set_op = Op_Code.Set_Local;
+    var arg = resolve_local(s, &s.current, &name);
+    if (arg == -1) {
+        arg = try identifier_constant(s, name);
+        get_op = .Get_Global;
+        set_op = .Set_Global;
+    }
 
-    if (can_assign and match(c, .Equal)) {
-        try expression(c);
-        try emit_bytes(c, to_byte(.Set_Global), arg);
+    if (can_assign and match(s, .Equal)) {
+        try expression(s);
+        try emit_bytes(s, to_byte(set_op), @intCast(arg));
     } else {
-        try emit_bytes(c, to_byte(.Get_Global), arg);
+        try emit_bytes(s, to_byte(get_op), @intCast(arg));
     }
 }
 
-fn binary(c: *Compiler, can_assign: bool) Parse_Rule_Result {
+fn resolve_local(s: *State, compiler: *Compiler, name: *const Token) i32 {
+    var i = compiler.local_cnt - 1;
+    while (0 <= i) : (i -= 1) {
+        const local = &compiler.locals[@intCast(i)];
+        if (identifiers_equal(name, &local.name)) {
+            if (local.depth == -1) {
+                error_at_prev(s, "Can't read local variable in its own initializer.");
+            }
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+fn binary(s: *State, can_assign: bool) Parse_Rule_Result {
     _ = can_assign;
-    const op_kind = c.parser.previous.kind;
+    const op_kind = s.parser.previous.kind;
     const rule = get_rule(op_kind);
-    try parse_precedence(c, @enumFromInt(@intFromEnum(rule.precedence) + 1));
+    try parse_precedence(s, @enumFromInt(@intFromEnum(rule.precedence) + 1));
 
     try switch (op_kind) {
-        .Bang_Equal => emit_bytes(c, to_byte(.Equal), to_byte(.Not)),
-        .Equal_Equal => emit_byte(c, to_byte(.Equal)),
-        .Greater => emit_byte(c, to_byte(.Greater)),
-        .Greater_Equal => emit_bytes(c, to_byte(.Less), to_byte(.Not)),
-        .Less => emit_byte(c, to_byte(.Less)),
-        .Less_Equal => emit_bytes(c, to_byte(.Greater), to_byte(.Not)),
-        .Plus => emit_byte(c, to_byte(.Add)),
-        .Minus => emit_byte(c, to_byte(.Subtract)),
-        .Star => emit_byte(c, to_byte(.Multiply)),
-        .Slash => emit_byte(c, to_byte(.Divide)),
+        .Bang_Equal => emit_bytes(s, to_byte(.Equal), to_byte(.Not)),
+        .Equal_Equal => emit_byte(s, to_byte(.Equal)),
+        .Greater => emit_byte(s, to_byte(.Greater)),
+        .Greater_Equal => emit_bytes(s, to_byte(.Less), to_byte(.Not)),
+        .Less => emit_byte(s, to_byte(.Less)),
+        .Less_Equal => emit_bytes(s, to_byte(.Greater), to_byte(.Not)),
+        .Plus => emit_byte(s, to_byte(.Add)),
+        .Minus => emit_byte(s, to_byte(.Subtract)),
+        .Star => emit_byte(s, to_byte(.Multiply)),
+        .Slash => emit_byte(s, to_byte(.Divide)),
         else => return,
     };
 }
 
-fn parse_precedence(c: *Compiler, prec: Precedence) !void {
-    advance(c);
-    const prefix_rule = get_rule(c.parser.previous.kind).prefix;
+fn parse_precedence(s: *State, prec: Precedence) !void {
+    advance(s);
+    const prefix_rule = get_rule(s.parser.previous.kind).prefix;
     if (prefix_rule == null) {
-        error_at_prev(c, "Expect expression.");
+        error_at_prev(s, "Expect expression.");
         return;
     }
 
     const can_assign = @intFromEnum(prec) <= @intFromEnum(Precedence.Assignment);
-    try prefix_rule.?(c, can_assign);
+    try prefix_rule.?(s, can_assign);
 
-    while (@intFromEnum(prec) <= @intFromEnum(get_rule(c.parser.current.kind).precedence)) {
-        advance(c);
-        const infix_rule = get_rule(c.parser.previous.kind).infix;
-        try infix_rule.?(c, can_assign);
+    while (@intFromEnum(prec) <= @intFromEnum(get_rule(s.parser.current.kind).precedence)) {
+        advance(s);
+        const infix_rule = get_rule(s.parser.previous.kind).infix;
+        try infix_rule.?(s, can_assign);
     }
 
-    if (can_assign and match(c, .Equal)) {
-        error_at_prev(c, "Invalid assignment target.");
+    if (can_assign and match(s, .Equal)) {
+        error_at_prev(s, "Invalid assignment target.");
     }
 }
 
@@ -261,74 +380,74 @@ fn get_rule(kind: Token_Kind) *Parse_Rule {
     return &rules[@intFromEnum(kind)];
 }
 
-fn emit_constant(c: *Compiler, val: Value) !void {
-    try emit_bytes(c, to_byte(.Constant), try make_constant(c, val));
+fn emit_constant(s: *State, val: Value) !void {
+    try emit_bytes(s, to_byte(.Constant), try make_constant(s, val));
 }
 
-fn make_constant(c: *Compiler, val: Value) !u8 {
-    const constant = try chunk.add_constant(current_chunk(c), val);
+fn make_constant(s: *State, val: Value) !u8 {
+    const constant = try chunk.add_constant(current_chunk(s), val);
     if (std.math.maxInt(u8) < constant) {
-        error_at_prev(c, "Too many constants in one chunk.");
+        error_at_prev(s, "Too many constants in one chunk.");
         return 0;
     }
 
     return constant;
 }
 
-fn end_compiler(c: *Compiler) !void {
-    try emit_return(c);
-    if (debug.IS_DEBUG and !c.had_error) {
-        debug.disassemble_chunk(current_chunk(c).*, "code");
+fn end_compiler(s: *State) !void {
+    try emit_return(s);
+    if (debug.IS_DEBUG and !s.had_error) {
+        debug.disassemble_chunk(current_chunk(s).*, "code");
     }
 }
 
-fn emit_return(c: *Compiler) !void {
-    try emit_byte(c, to_byte(.Return));
+fn emit_return(s: *State) !void {
+    try emit_byte(s, to_byte(.Return));
 }
 
-fn emit_bytes(c: *Compiler, b1: u8, b2: u8) !void {
-    try emit_byte(c, b1);
-    try emit_byte(c, b2);
+fn emit_bytes(s: *State, b1: u8, b2: u8) !void {
+    try emit_byte(s, b1);
+    try emit_byte(s, b2);
 }
 
-fn advance(c: *Compiler) void {
-    c.parser.previous = c.parser.current;
+fn advance(s: *State) void {
+    s.parser.previous = s.parser.current;
 
     while (true) {
-        c.parser.current = scanner.scan_token(&c.scaner);
-        if (c.parser.current.kind != .Error) break;
+        s.parser.current = scanner.scan_token(&s.scaner);
+        if (s.parser.current.kind != .Error) break;
 
-        error_at_current(c, c.parser.current.lexeme);
+        error_at_current(s, s.parser.current.lexeme);
     }
 }
 
-fn consume(c: *Compiler, kind: Token_Kind, msg: []const u8) void {
-    if (c.parser.current.kind == kind) {
-        advance(c);
+fn consume(s: *State, kind: Token_Kind, msg: []const u8) void {
+    if (s.parser.current.kind == kind) {
+        advance(s);
         return;
     }
 
-    error_at_current(c, msg);
+    error_at_current(s, msg);
 }
 
-fn current_chunk(c: *Compiler) *Chunk {
-    return c.chunk;
+fn current_chunk(s: *State) *Chunk {
+    return s.chunk;
 }
 
-fn emit_byte(c: *Compiler, byte: u8) !void {
-    try chunk.write_byte(current_chunk(c), byte, c.parser.previous.line);
+fn emit_byte(s: *State, byte: u8) !void {
+    try chunk.write_byte(current_chunk(s), byte, s.parser.previous.line);
 }
 
-fn error_at_current(c: *Compiler, msg: []const u8) void {
-    error_at(c, &c.parser.current, msg);
+fn error_at_current(s: *State, msg: []const u8) void {
+    error_at(s, &s.parser.current, msg);
 }
 
-fn error_at_prev(c: *Compiler, msg: []const u8) void {
-    error_at(c, &c.parser.previous, msg);
+fn error_at_prev(s: *State, msg: []const u8) void {
+    error_at(s, &s.parser.previous, msg);
 }
 
-fn error_at(c: *Compiler, tok: *Token, msg: []const u8) void {
-    if (c.panic_mode) return;
+fn error_at(s: *State, tok: *Token, msg: []const u8) void {
+    if (s.panic_mode) return;
     std.debug.print("[line {d}] Error", .{tok.line});
 
     if (tok.kind == .Eof) {
@@ -338,7 +457,7 @@ fn error_at(c: *Compiler, tok: *Token, msg: []const u8) void {
     }
 
     std.debug.print(": {s}\n", .{msg});
-    c.had_error = true;
+    s.had_error = true;
 }
 
 fn to_byte(e: Op_Code) u8 {
