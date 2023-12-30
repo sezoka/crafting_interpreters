@@ -231,8 +231,11 @@ fn run(vm: *VM) Interpret_Result {
                     vm.ip += offset;
                 }
             },
+            @intFromEnum(Op_Code.Loop) => {
+                const offset = read_short(vm);
+                vm.ip -= offset;
+            },
             @intFromEnum(Op_Code.Return) => return,
-
             else => unreachable,
         };
     }

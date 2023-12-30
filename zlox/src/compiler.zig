@@ -200,7 +200,9 @@ fn statement(s: *State) error{OutOfMemory}!void {
     if (match(s, .Print)) {
         try print_stmt(s);
     } else if (match(s, .If)) {
-        try if_statement(s);
+        try if_stmt(s);
+    } else if (match(s, .While)) {
+        try while_stmt(s);
     } else if (match(s, .Left_Brace)) {
         try begin_scope(s);
         try block(s);
@@ -210,7 +212,32 @@ fn statement(s: *State) error{OutOfMemory}!void {
     }
 }
 
-fn if_statement(s: *State) !void {
+fn while_stmt(s: *State) !void {
+    const loop_start = s.chunk.code.items.len;
+    consume(s, .Left_Paren, "Expect '(' after 'while'.");
+    try expression(s);
+    consume(s, .Right_Paren, "Expect ')' after condition.");
+
+    const exit_jump = try emit_jump(s, to_byte(.Jump_If_False));
+    try emit_byte(s, to_byte(.Pop));
+    try statement(s);
+    try emit_loop(s, loop_start);
+
+    patch_jump(s, exit_jump);
+    try emit_byte(s, to_byte(.Pop));
+}
+
+fn emit_loop(s: *State, loop_start: usize) !void {
+    try emit_byte(s, to_byte(.Loop));
+
+    const offset = current_chunk(s).code.items.len - loop_start + 2;
+    if (std.math.maxInt(u16) < offset) error_at_prev(s, "Loop body too large.");
+
+    try emit_byte(s, @intCast((offset >> 8) & 0xff));
+    try emit_byte(s, @intCast(offset & 0xff));
+}
+
+fn if_stmt(s: *State) !void {
     consume(s, .Left_Paren, "Expect '(' after 'if'.");
     try expression(s);
     consume(s, .Right_Paren, "Expect ')' after condition.");
@@ -371,6 +398,28 @@ fn resolve_local(s: *State, compiler: *Compiler, name: *const Token) i32 {
     return -1;
 }
 
+fn or_(s: *State, can_assign: bool) Parse_Rule_Result {
+    _ = can_assign;
+    const else_jump = try emit_jump(s, to_byte(.Jump_If_False));
+    const end_jump = try emit_jump(s, to_byte(.Jump));
+
+    patch_jump(s, else_jump);
+    try emit_byte(s, to_byte(.Pop));
+
+    try parse_precedence(s, .Or);
+    patch_jump(s, end_jump);
+}
+
+fn and_(s: *State, can_assign: bool) Parse_Rule_Result {
+    _ = can_assign;
+    const end_jump = try emit_jump(s, to_byte(.Jump_If_False));
+
+    try emit_byte(s, to_byte(.Pop));
+    try parse_precedence(s, .And);
+
+    patch_jump(s, end_jump);
+}
+
 fn binary(s: *State, can_assign: bool) Parse_Rule_Result {
     _ = can_assign;
     const op_kind = s.parser.previous.kind;
@@ -526,7 +575,7 @@ const rules: []Parse_Rule = blk: {
     rls[@intFromEnum(Token_Kind.Identifier)] = parse_rule(variable, null, .None);
     rls[@intFromEnum(Token_Kind.String)] = parse_rule(string, null, .None);
     rls[@intFromEnum(Token_Kind.Number)] = parse_rule(number, null, .None);
-    rls[@intFromEnum(Token_Kind.And)] = parse_rule(null, null, .None);
+    rls[@intFromEnum(Token_Kind.And)] = parse_rule(null, and_, .And);
     rls[@intFromEnum(Token_Kind.Class)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Else)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.False)] = parse_rule(literal, null, .None);
@@ -534,7 +583,7 @@ const rules: []Parse_Rule = blk: {
     rls[@intFromEnum(Token_Kind.Fun)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.If)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Nil)] = parse_rule(literal, null, .None);
-    rls[@intFromEnum(Token_Kind.Or)] = parse_rule(null, null, .None);
+    rls[@intFromEnum(Token_Kind.Or)] = parse_rule(null, or_, .Or);
     rls[@intFromEnum(Token_Kind.Print)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Return)] = parse_rule(null, null, .None);
     rls[@intFromEnum(Token_Kind.Super)] = parse_rule(null, null, .None);

@@ -6,4 +6,4 @@ var breakfast = "beignets";
   }
 }
 
-if (false) print breakfast;
+while (true) { print breakfast; }

@@ -23,7 +23,7 @@ const token_kinds_map = std.ComptimeStringMap(Token_Kind, .{
     .{ "return", .Return },
     .{ "super", .Super },
     .{ "var", .Var },
-    .{ "whlie", .While },
+    .{ "while", .While },
     .{ "false", .False },
     .{ "true", .True },
 });

@@ -47,6 +47,7 @@ pub fn disassemble_instr(ch: Chunk, offset: usize) usize {
         @intFromEnum(Op_Code.Print) => return simple_instr("Print", offset),
         @intFromEnum(Op_Code.Jump) => return jump_instruction("Jump", 1, ch, offset),
         @intFromEnum(Op_Code.Jump_If_False) => return jump_instruction("Jump_If_False", 1, ch, offset),
+        @intFromEnum(Op_Code.Loop) => return jump_instruction("Loop", -1, ch, offset),
         @intFromEnum(Op_Code.Return) => return simple_instr("Return", offset),
         else => {
             std.debug.print("Unknown opcode {d}\n", .{instr});
