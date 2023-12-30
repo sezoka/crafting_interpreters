@@ -45,12 +45,21 @@ pub fn disassemble_instr(ch: Chunk, offset: usize) usize {
         @intFromEnum(Op_Code.Divide) => return simple_instr("Divide", offset),
         @intFromEnum(Op_Code.Not) => return simple_instr("Not", offset),
         @intFromEnum(Op_Code.Print) => return simple_instr("Print", offset),
+        @intFromEnum(Op_Code.Jump) => return jump_instruction("Jump", 1, ch, offset),
+        @intFromEnum(Op_Code.Jump_If_False) => return jump_instruction("Jump_If_False", 1, ch, offset),
         @intFromEnum(Op_Code.Return) => return simple_instr("Return", offset),
         else => {
             std.debug.print("Unknown opcode {d}\n", .{instr});
             return offset + 1;
         },
     }
+}
+
+pub fn jump_instruction(name: []const u8, sigh: i32, ch: Chunk, offset: usize) usize {
+    var jump = @as(u16, @intCast(ch.code.items[offset + 1])) << 8;
+    jump |= ch.code.items[offset + 2];
+    std.debug.print("{s:<16} {d:4} -> {d}\n", .{ name, offset, @as(i32, @intCast(offset + 3)) + sigh * jump });
+    return offset + 3;
 }
 
 pub fn byte_instr(name: []const u8, ch: Chunk, offset: usize) usize {

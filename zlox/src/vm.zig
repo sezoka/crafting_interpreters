@@ -221,11 +221,27 @@ fn run(vm: *VM) Interpret_Result {
                 value.print_val(stack_pop(vm));
                 std.debug.print("\n", .{});
             },
+            @intFromEnum(Op_Code.Jump) => {
+                const offset = read_short(vm);
+                vm.ip += offset;
+            },
+            @intFromEnum(Op_Code.Jump_If_False) => {
+                const offset = read_short(vm);
+                if (is_falsey(peek(vm, 0))) {
+                    vm.ip += offset;
+                }
+            },
             @intFromEnum(Op_Code.Return) => return,
 
             else => unreachable,
         };
     }
+}
+
+fn read_short(vm: *VM) u16 {
+    const short = (@as(u16, @intCast(vm.ip[0])) << 8) | (@as(u16, @intCast(vm.ip[1])));
+    vm.ip += 2;
+    return short;
 }
 
 fn read_string(vm: *VM) !*Obj_String {

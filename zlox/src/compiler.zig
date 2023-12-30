@@ -196,9 +196,11 @@ fn synchronize(s: *State) !void {
     }
 }
 
-fn statement(s: *State) !void {
+fn statement(s: *State) error{OutOfMemory}!void {
     if (match(s, .Print)) {
         try print_stmt(s);
+    } else if (match(s, .If)) {
+        try if_statement(s);
     } else if (match(s, .Left_Brace)) {
         try begin_scope(s);
         try block(s);
@@ -206,6 +208,42 @@ fn statement(s: *State) !void {
     } else {
         try expr_stmt(s);
     }
+}
+
+fn if_statement(s: *State) !void {
+    consume(s, .Left_Paren, "Expect '(' after 'if'.");
+    try expression(s);
+    consume(s, .Right_Paren, "Expect ')' after condition.");
+
+    const then_jump = try emit_jump(s, to_byte(.Jump_If_False));
+    try emit_byte(s, to_byte(.Pop));
+    try statement(s);
+
+    const else_jump = try emit_jump(s, to_byte(.Jump));
+
+    patch_jump(s, then_jump);
+    try emit_byte(s, to_byte(.Pop));
+
+    if (match(s, .Else)) try statement(s);
+    patch_jump(s, else_jump);
+}
+
+fn emit_jump(s: *State, instruction: u8) !i32 {
+    try emit_byte(s, instruction);
+    try emit_byte(s, 0xff);
+    try emit_byte(s, 0xff);
+    return @intCast(current_chunk(s).code.items.len - 2);
+}
+
+fn patch_jump(s: *State, offset: i32) void {
+    const jump = @as(i32, @intCast(current_chunk(s).code.items.len)) - offset - 2;
+
+    if (std.math.maxInt(u16) < jump) {
+        error_at_prev(s, "Too much code to jump over.");
+    }
+
+    current_chunk(s).code.items[@intCast(offset)] = @intCast((jump >> 8) & 0xff);
+    current_chunk(s).code.items[@intCast(offset + 1)] = @intCast(jump & 0xff);
 }
 
 fn block(s: *State) !void {
