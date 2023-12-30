@@ -8,6 +8,10 @@ pub const Op_Code = enum(u8) {
     Nil,
     True,
     False,
+    Pop,
+    Get_Global,
+    Define_Global,
+    Set_Global,
     Equal,
     Greater,
     Less,
@@ -17,6 +21,7 @@ pub const Op_Code = enum(u8) {
     Divide,
     Not,
     Negate,
+    Print,
     Return,
 };
 

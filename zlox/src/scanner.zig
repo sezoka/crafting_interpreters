@@ -98,7 +98,7 @@ fn read_number(s: *Scanner) Token {
 
 fn read_string(s: *Scanner) Token {
     while (peek(s.*) != '"' and !is_at_end(s.*)) {
-        if (peek(s.*) != '\n') s.line += 1;
+        if (peek(s.*) == '\n') s.line += 1;
         _ = advance(s);
     }
 

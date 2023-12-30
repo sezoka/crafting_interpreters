@@ -21,12 +21,12 @@ pub fn main() !void {
         return;
     };
 
-    if (!args.skip()) {
-        std.debug.print("Usage: clox [path]\n", .{});
-        return;
-    }
-
     try run_file(&vm_inst, file_path);
+
+    // if (!args.skip()) {
+    //     std.debug.print("Usage: clox [path]\n", .{});
+    //     return;
+    // }
 }
 
 fn repl(v: *vm.VM) !void {
@@ -43,7 +43,7 @@ fn repl(v: *vm.VM) !void {
 
         try vm.interpret(v, line.items);
 
-        line.clearRetainingCapacity();
+        line.clearAndFree();
     }
 }
 

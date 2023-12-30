@@ -1,8 +1,12 @@
 const std = @import("std");
 const object = @import("object.zig");
+const value = @import("value.zig");
+
+const Value = value.Value;
 const Obj_String = object.Obj_String;
 
 pub const Obj_String_Set = std.HashMap(*Obj_String, void, Obj_String_Context, 80);
+pub const Obj_String_Map = std.HashMap(*Obj_String, Value, Obj_String_Context, 80);
 
 pub const Obj_String_Context = struct {
     pub fn hash(self: @This(), s: *Obj_String) u64 {

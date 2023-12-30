@@ -11,6 +11,7 @@ const Chunk = chunk.Chunk;
 const Obj = object.Obj;
 const Obj_String = object.Obj_String;
 const Obj_String_Set = table.Obj_String_Set;
+const Obj_String_Map = table.Obj_String_Map;
 const Op_Code = chunk.Op_Code;
 const Value = value.Value;
 
@@ -25,6 +26,7 @@ pub const VM = struct {
     stack: std.ArrayList(Value),
     objects: ?*Obj,
     strings: Obj_String_Set,
+    globals: Obj_String_Map,
 };
 
 pub fn create(ally: std.mem.Allocator) VM {
@@ -35,12 +37,14 @@ pub fn create(ally: std.mem.Allocator) VM {
         .objects = null,
         .ally = ally,
         .strings = Obj_String_Set.init(ally),
+        .globals = Obj_String_Map.init(ally),
     };
 }
 
 pub fn deinit(vm: *VM) void {
     vm.stack.deinit();
     vm.strings.deinit();
+    vm.globals.deinit();
     free_objects(vm);
 }
 
@@ -109,15 +113,36 @@ fn run(vm: *VM) Interpret_Result {
     };
 
     while (true) {
-        if (debug.IS_DEBUG) {
+        if (false) {
             std.debug.print("          ", .{});
+            std.debug.print("\nCOMMAND:\n", .{});
+            _ = debug.disassemble_instr(vm.chunk.*, @intFromPtr(vm.ip) - @intFromPtr(vm.chunk.code.items.ptr));
+
+            std.debug.print("\nSTACK:\n", .{});
             for (vm.stack.items) |slot| {
                 std.debug.print("[ ", .{});
                 value.print_val(slot);
                 std.debug.print(" ]", .{});
             }
             std.debug.print("\n", .{});
-            _ = debug.disassemble_instr(vm.chunk.*, @intFromPtr(vm.ip) - @intFromPtr(vm.chunk.code.items.ptr));
+
+            std.debug.print("\nGLOBALS:\n", .{});
+            var iter = vm.globals.valueIterator();
+            while (iter.next()) |slot| {
+                std.debug.print("[ ", .{});
+                value.print_val(slot.*);
+                std.debug.print(" ]", .{});
+            }
+            std.debug.print("\n", .{});
+
+            std.debug.print("\nCONSTANTS:\n", .{});
+            for (vm.chunk.constants.items) |slot| {
+                std.debug.print("[ ", .{});
+                value.print_val(slot);
+                std.debug.print(" ]", .{});
+            }
+
+            std.debug.print("\n-----------\n", .{});
         }
 
         const instr = read_byte(vm);
@@ -136,6 +161,32 @@ fn run(vm: *VM) Interpret_Result {
             @intFromEnum(Op_Code.Nil) => stack_push(vm, .nil),
             @intFromEnum(Op_Code.True) => stack_push(vm, value.from_bool(true)),
             @intFromEnum(Op_Code.False) => stack_push(vm, value.from_bool(false)),
+            @intFromEnum(Op_Code.Pop) => {
+                _ = stack_pop(vm);
+            },
+            @intFromEnum(Op_Code.Get_Global) => {
+                const name = try read_string(vm);
+                if (vm.globals.get(name)) |val| {
+                    try stack_push(vm, val);
+                } else {
+                    runtime_error(vm, "Undefined variable '{s}'.", .{name.chars});
+                    return error.Runtime;
+                }
+            },
+            @intFromEnum(Op_Code.Define_Global) => {
+                const name = try read_string(vm);
+                try vm.globals.put(name, peek(vm, 0));
+                _ = stack_pop(vm);
+            },
+            @intFromEnum(Op_Code.Set_Global) => {
+                const name = try read_string(vm);
+                if (vm.globals.contains(name)) {
+                    try vm.globals.put(name, peek(vm, 0));
+                } else {
+                    runtime_error(vm, "Undefined variable '{s}'", .{name.chars});
+                    return error.Runtime;
+                }
+            },
             @intFromEnum(Op_Code.Equal) => {
                 const b = stack_pop(vm);
                 const a = stack_pop(vm);
@@ -159,15 +210,19 @@ fn run(vm: *VM) Interpret_Result {
             @intFromEnum(Op_Code.Multiply) => util.binary_op(vm, .Multiply),
             @intFromEnum(Op_Code.Divide) => util.binary_op(vm, .Divide),
             @intFromEnum(Op_Code.Not) => stack_push(vm, value.from_bool(is_falsey(stack_pop(vm)))),
-            @intFromEnum(Op_Code.Return) => {
+            @intFromEnum(Op_Code.Print) => {
                 value.print_val(stack_pop(vm));
                 std.debug.print("\n", .{});
-                return;
             },
+            @intFromEnum(Op_Code.Return) => return,
 
             else => unreachable,
         };
     }
+}
+
+fn read_string(vm: *VM) !*Obj_String {
+    return object.as_string(read_constant(vm));
 }
 
 fn concatenate(vm: *VM) !void {

@@ -11,7 +11,7 @@ pub fn disassemble_chunk(ch: Chunk, name: []const u8) void {
 
     var offset: usize = 0;
     while (offset < ch.code.items.len) {
-        offset += disassemble_instr(ch, offset);
+        offset = disassemble_instr(ch, offset);
     }
 }
 
@@ -30,7 +30,11 @@ pub fn disassemble_instr(ch: Chunk, offset: usize) usize {
         @intFromEnum(Op_Code.Nil) => return simple_instr("Nil", offset),
         @intFromEnum(Op_Code.True) => return simple_instr("True", offset),
         @intFromEnum(Op_Code.False) => return simple_instr("False", offset),
+        @intFromEnum(Op_Code.Get_Global) => return constant_instr("Get_Global", ch, offset),
+        @intFromEnum(Op_Code.Define_Global) => return constant_instr("Define_Global", ch, offset),
+        @intFromEnum(Op_Code.Set_Global) => return constant_instr("Set_Global", ch, offset),
         @intFromEnum(Op_Code.Equal) => return simple_instr("Equal", offset),
+        @intFromEnum(Op_Code.Pop) => return simple_instr("Pop", offset),
         @intFromEnum(Op_Code.Greater) => return simple_instr("Greater", offset),
         @intFromEnum(Op_Code.Less) => return simple_instr("Less", offset),
         @intFromEnum(Op_Code.Negate) => return simple_instr("Negate", offset),
@@ -39,6 +43,7 @@ pub fn disassemble_instr(ch: Chunk, offset: usize) usize {
         @intFromEnum(Op_Code.Multiply) => return simple_instr("Multiply", offset),
         @intFromEnum(Op_Code.Divide) => return simple_instr("Divide", offset),
         @intFromEnum(Op_Code.Not) => return simple_instr("Not", offset),
+        @intFromEnum(Op_Code.Print) => return simple_instr("Print", offset),
         @intFromEnum(Op_Code.Return) => return simple_instr("Return", offset),
         else => {
             std.debug.print("Unknown opcode {d}\n", .{instr});
