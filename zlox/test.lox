@@ -6,4 +6,8 @@ var breakfast = "beignets";
   }
 }
 
-while (true) { print breakfast; }
+while (false) { print breakfast; }
+
+for (var i = 0; i <= 10; i = i + 1) {
+  print i;
+}

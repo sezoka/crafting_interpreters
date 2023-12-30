@@ -199,6 +199,8 @@ fn synchronize(s: *State) !void {
 fn statement(s: *State) error{OutOfMemory}!void {
     if (match(s, .Print)) {
         try print_stmt(s);
+    } else if (match(s, .For)) {
+        try for_stmt(s);
     } else if (match(s, .If)) {
         try if_stmt(s);
     } else if (match(s, .While)) {
@@ -210,6 +212,48 @@ fn statement(s: *State) error{OutOfMemory}!void {
     } else {
         try expr_stmt(s);
     }
+}
+
+fn for_stmt(s: *State) !void {
+    try begin_scope(s);
+    consume(s, .Left_Paren, "Expect '(' after 'for'.");
+    if (match(s, .Semicolon)) {} else if (match(s, .Var)) {
+        try var_decl(s);
+    } else {
+        try expr_stmt(s);
+    }
+
+    var loop_start = current_chunk(s).code.items.len;
+    var exit_jump: i32 = -1;
+    if (!match(s, .Semicolon)) {
+        try expression(s);
+        consume(s, .Semicolon, "Expect ';' after loop condition.");
+
+        exit_jump = try emit_jump(s, to_byte(.Jump_If_False));
+        try emit_byte(s, to_byte(.Pop));
+    }
+
+    if (!match(s, .Right_Paren)) {
+        const body_jump = try emit_jump(s, to_byte(.Jump));
+        const increment_start = current_chunk(s).code.items.len;
+        try expression(s);
+        try emit_byte(s, to_byte(.Pop));
+        consume(s, .Right_Paren, "Expect ')' after for clasues.");
+
+        try emit_loop(s, loop_start);
+        loop_start = increment_start;
+        patch_jump(s, body_jump);
+    }
+
+    try statement(s);
+    try emit_loop(s, loop_start);
+
+    if (exit_jump != -1) {
+        patch_jump(s, exit_jump);
+        try emit_byte(s, to_byte(.Pop));
+    }
+
+    try end_scope(s);
 }
 
 fn while_stmt(s: *State) !void {
